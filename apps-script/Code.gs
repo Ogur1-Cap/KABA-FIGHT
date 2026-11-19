@@ -207,13 +207,19 @@ function gemini(parts) {
   const used = Number(props.getProperty(k) || 0);
   if (used >= GEMINI_MAX_PAR_JOUR) throw new Error('limite_jour');
   props.setProperty(k, String(used + 1));
-  const body = { contents: [{ parts }], generationConfig: { responseMimeType: 'application/json', temperature: 0.2 } };
+  // Réflexion réduite au minimum : les modèles récents « réfléchissent » longtemps par défaut, inutile ici
+  const fast = { contents: [{ parts }], generationConfig: { responseMimeType: 'application/json', temperature: 0.2, thinkingConfig: { thinkingLevel: 'low' } } };
+  const plain = { contents: [{ parts }], generationConfig: { responseMimeType: 'application/json', temperature: 0.2 } };
+  const t0 = Date.now();
   let last = '', saturated = false;
   for (const m of geminiModels()) {
+    let body = fast;
     for (let attempt = 0; attempt < 2; attempt++) {
+      if (Date.now() - t0 > 70000) throw new Error('gemini lent');
       const r = UrlFetchApp.fetch('https://generativelanguage.googleapis.com/v1beta/models/' + m + ':generateContent?key=' + GEMINI_KEY,
         { method: 'post', contentType: 'application/json', payload: JSON.stringify(body), muteHttpExceptions: true });
       const code = r.getResponseCode();
+      if (code === 400 && body === fast) { body = plain; attempt--; continue; } // ce modèle ne connaît pas le réglage de réflexion
       if (code === 200) {
         const j = JSON.parse(r.getContentText());
         LAST_TOKENS = (j.usageMetadata && j.usageMetadata.totalTokenCount) || 0;
