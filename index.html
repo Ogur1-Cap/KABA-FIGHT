@@ -130,6 +130,8 @@ nav a{font-size:11px}
 .rec select{width:auto;min-width:120px}
 .rec details{font-size:14px;color:var(--mute);margin-top:6px}
 .mic{flex:0 0 auto}
+.pbtn{display:flex;align-items:center;justify-content:center;min-height:48px;border-radius:12px;padding:10px 14px;font:600 15px Inter,system-ui,sans-serif;cursor:pointer;background:var(--mat);color:var(--on);flex:1 1 140px}
+.pbtn.ghost{background:transparent;color:var(--ink);border:1px solid var(--line)}
 .mic.on{background:var(--glove);color:#fff}
 .tabs button{padding:10px 4px;font-size:14px}
 </style>
@@ -282,8 +284,13 @@ nav a{font-size:11px}
       <div class="btns" style="margin-top:12px"><button id="manSave">Enregistrer</button></div>
     </div>
     <div id="mPhoto" hidden>
-      <label for="photoIn">Photo de ton assiette</label>
-      <input type="file" id="photoIn" accept="image/*">
+      <label>Photo de ton assiette</label>
+      <div class="btns">
+        <label class="pbtn" for="camIn">📷 Prendre une photo</label>
+        <label class="pbtn ghost" for="photoIn">🖼 Choisir une photo</label>
+      </div>
+      <input type="file" id="camIn" accept="image/*" capture="environment" hidden>
+      <input type="file" id="photoIn" accept="image/*" hidden>
       <img id="photoPrev" class="preview" alt="" hidden>
       <label for="photoNote" style="margin-top:8px">Précisions ou description (facultatif sans photo)</label>
       <textarea id="photoNote" placeholder="Ex. : cuit avec 1 c. à soupe d'huile ; ou sans photo : 150 g de riz, un blanc de poulet, des haricots verts"></textarea>
@@ -695,11 +702,14 @@ function shrink(file) {
     }; img.onerror = rej; img.src = URL.createObjectURL(file);
   });
 }
-$('photoIn').onchange = async () => {
-  const f = $('photoIn').files[0]; if (!f) return;
+async function onPhoto(input) {
+  const f = input.files[0]; if (!f) return;
   try { const url = await shrink(f); photoB64 = url.split(',')[1]; $('photoPrev').src = url; $('photoPrev').hidden = false; }
   catch { toast('Photo illisible, essaie une autre'); }
-};
+  input.value = '';
+}
+$('camIn').onchange = () => onPhoto($('camIn'));
+$('photoIn').onchange = () => onPhoto($('photoIn'));
 $('anaBtn').onclick = async () => {
   const note = $('photoNote').value.trim();
   if (!photoB64 && !note) { toast('Prends une photo ou décris ton repas'); return; }

@@ -306,11 +306,14 @@ function shrink(file) {
     }; img.onerror = rej; img.src = URL.createObjectURL(file);
   });
 }
-$('photoIn').onchange = async () => {
-  const f = $('photoIn').files[0]; if (!f) return;
+async function onPhoto(input) {
+  const f = input.files[0]; if (!f) return;
   try { const url = await shrink(f); photoB64 = url.split(',')[1]; $('photoPrev').src = url; $('photoPrev').hidden = false; }
   catch { toast('Photo illisible, essaie une autre'); }
-};
+  input.value = '';
+}
+$('camIn').onchange = () => onPhoto($('camIn'));
+$('photoIn').onchange = () => onPhoto($('photoIn'));
 $('anaBtn').onclick = async () => {
   const note = $('photoNote').value.trim();
   if (!photoB64 && !note) { toast('Prends une photo ou décris ton repas'); return; }
