@@ -1,0 +1,84 @@
+<style>
+/* VOICE: un coach de salle de boxe, direct et encourageant, chiffres d'abord.
+   IDEA: le carnet de pesée d'un fight camp, la balance et le compte à rebours.
+   PICTURE: l'anneau du jour (calories restantes) au centre, comme un ring vu d'en haut.
+   COLOUR and TYPE: bleu tapis de ring, rouge gant, blanc ; Anton pour les chiffres, Inter pour le texte.
+   LAYOUT: une colonne mobile, barre d'onglets en bas, cartes pleines. */
+:root{color-scheme:light dark;
+--bg:light-dark(#ffffff,#0a1230);--ink:light-dark(#0c1633,#eef2ff);--mute:light-dark(#5a6482,#9aa6cc);
+--mat:light-dark(#123a8c,#1a47a8);--mat2:light-dark(#e8eefb,#14204a);--glove:light-dark(#d7262e,#ff4a52);
+--card:light-dark(#f5f7fc,#111c44);--line:light-dark(#dfe5f3,#24316a);--ok:light-dark(#0f7a4a,#3fd08a)}
+:root[data-theme=light]{color-scheme:light}:root[data-theme=dark]{color-scheme:dark}
+*{box-sizing:border-box;min-width:0}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 Inter,system-ui,sans-serif;overflow-x:clip;padding-bottom:84px}
+.num{font-family:Anton,Impact,sans-serif;letter-spacing:.5px;font-weight:400}
+header{background:var(--mat);color:#fff;padding:18px max(5vw,16px) 22px}
+header .row{display:flex;justify-content:space-between;align-items:flex-end;gap:12px;max-width:720px;margin:auto}
+header h1{margin:0;font:400 30px/1 Anton,Impact,sans-serif;letter-spacing:1px}
+header small{display:block;opacity:.8;font-size:13px;margin-top:4px}
+.cd{text-align:right}.cd b{font:400 40px/1 Anton,Impact,sans-serif;display:block}.cd span{font-size:13px;opacity:.85}
+main{max-width:720px;margin:auto;padding:16px max(4vw,14px)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:16px;margin-bottom:14px}
+.card h2{margin:0 0 10px;font-size:17px}
+.banner{background:var(--glove);color:#fff;border:0}
+.banner h2{color:#fff}
+.mute{color:var(--mute);font-size:14px}
+.ringwrap{display:grid;grid-template-columns:minmax(0,1fr);justify-items:center;gap:6px;margin:4px 0 8px}
+.ring{width:min(260px,70vw);aspect-ratio:1;position:relative}
+.ring svg{width:100%;height:100%;transform:rotate(-90deg)}
+.ring .in{position:absolute;inset:0;display:grid;place-content:center;text-align:center}
+.ring .in b{font:400 52px/1 Anton,Impact,sans-serif}
+.ring .in span{font-size:14px;color:var(--mute)}
+.bars{display:grid;gap:10px;margin-top:6px}
+.bar .t{display:flex;justify-content:space-between;font-size:14px}
+.bar .tr{height:10px;background:var(--mat2);border-radius:6px;overflow:hidden;margin-top:4px}
+.bar .tr i{display:block;height:100%;background:var(--mat);border-radius:6px}
+.bar.p .tr i{background:var(--glove)}
+.weigh{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.weigh .big{font:400 34px/1 Anton,Impact,sans-serif}
+input,select,textarea{font:16px Inter,system-ui,sans-serif;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:10px 12px;min-height:44px;width:100%}
+textarea{min-height:90px;resize:vertical}
+input:focus-visible,select:focus-visible,textarea:focus-visible,button:focus-visible{outline:3px solid var(--glove);outline-offset:2px}
+button{font:600 15px Inter,system-ui,sans-serif;min-height:44px;border-radius:12px;border:0;padding:10px 16px;cursor:pointer;background:var(--mat);color:#fff}
+button.ghost{background:transparent;color:var(--ink);border:1px solid var(--line)}
+button.red{background:var(--glove)}
+button:disabled{opacity:.5;cursor:default}
+.btns{display:flex;gap:8px;flex-wrap:wrap}.btns>*{flex:1 1 auto}
+.chip{display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:600;border-radius:999px;padding:4px 10px;background:var(--mat2);color:var(--ink)}
+.chip.box{background:var(--glove);color:#fff}
+.meal{display:flex;justify-content:space-between;gap:10px;padding:10px 0;border-top:1px solid var(--line)}
+.meal:first-child{border-top:0}
+.meal .k{white-space:nowrap;text-align:right;font-weight:600}
+.meal small{color:var(--mute);display:block;font-size:13px}
+.x{background:none;color:var(--mute);border:0;min-height:32px;padding:4px 8px;font-size:13px;text-decoration:underline}
+nav{position:fixed;left:0;right:0;bottom:0;background:var(--bg);border-top:1px solid var(--line);display:grid;grid-template-columns:repeat(4,minmax(0,1fr));padding-bottom:env(safe-area-inset-bottom)}
+nav a{display:grid;place-items:center;gap:2px;padding:8px 0 10px;color:var(--mute);text-decoration:none;font-size:12px;font-weight:600;min-height:56px}
+nav a svg{width:22px;height:22px}
+nav a.on{color:var(--glove)}
+.view{display:none}.view.on{display:block}
+.fig{position:relative;height:300px}.fig svg{position:absolute;inset:0;width:100%;height:100%}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:13px;color:var(--mute);margin-top:8px}
+.legend i{display:inline-block;width:14px;height:3px;vertical-align:middle;margin-right:4px}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th,td{padding:8px 6px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}
+th:first-child,td:first-child{text-align:left}
+.scroll{overflow-x:auto}
+.sheet{position:fixed;inset:0;background:rgb(0 0 0 / .45);display:none;align-items:flex-end;justify-content:center;z-index:20}
+.sheet.on{display:flex}
+.sheet .pane{background:var(--bg);width:100%;max-width:720px;max-height:92vh;overflow:auto;border-radius:20px 20px 0 0;padding:18px max(4vw,14px) calc(18px + env(safe-area-inset-bottom))}
+.tabs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin:10px 0 14px}
+.tabs button{background:var(--mat2);color:var(--ink)}.tabs button.on{background:var(--mat);color:#fff}
+.it{display:grid;grid-template-columns:minmax(0,1fr) 92px 70px 28px;gap:6px;align-items:center;padding:6px 0;border-top:1px solid var(--line);font-size:14px}
+.it input{min-height:38px;padding:6px 8px}
+.grid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.grid4{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+label{font-size:13px;color:var(--mute);display:block}
+.msg{padding:10px 12px;border-radius:14px;margin:8px 0;max-width:88%;white-space:pre-wrap}
+.msg.user{background:var(--mat);color:#fff;margin-left:auto}
+.msg.assistant{background:var(--card);border:1px solid var(--line)}
+.toast{position:fixed;left:50%;bottom:96px;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:12px;font-size:14px;display:none;z-index:30;max-width:90vw}
+.check li{margin:6px 0}
+.preview{max-width:100%;max-height:220px;border-radius:12px;display:block;margin:8px 0}
+@media(prefers-reduced-motion:no-preference){.ring circle.v{transition:stroke-dashoffset .6s ease}}
+@media(max-width:420px){.it{grid-template-columns:minmax(0,1fr) 78px 60px 26px}.ring .in b{font-size:44px}}
+</style>

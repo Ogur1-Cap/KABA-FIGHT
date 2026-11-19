@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#123a8c">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<title>KABA Fight</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Anton&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+{{CSS}}
+<style>
+header{padding-top:max(18px,env(safe-area-inset-top))}
+.foods{display:grid;gap:6px;max-height:42vh;overflow:auto;margin-top:8px}
+.food{display:flex;justify-content:space-between;gap:8px;align-items:center;padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:var(--card);cursor:pointer;text-align:left;color:var(--ink);font:500 15px Inter,system-ui,sans-serif;min-height:44px}
+.food small{color:var(--mute);font-weight:400}
+.basket .it{grid-template-columns:minmax(0,1fr) 80px 70px 28px}
+.sync{font-size:12px;opacity:.85}
+.tabs{grid-template-columns:repeat(4,minmax(0,1fr))}
+.tabs button{padding:10px 4px;font-size:14px}
+</style>
+</head>
+<body>
+<header><div class="row">
+  <div><h1>KABA FIGHT</h1><small id="hsub">Objectif 74,5 kg le matin du 11/12</small><small class="sync" id="sync"></small></div>
+  <div class="cd"><b id="cdN" class="num">–</b><span id="cdL">avant la pesée</span></div>
+</div></header>
+
+<main>
+<p id="status" class="mute" role="status"></p>
+
+<section class="view" id="v-today">
+  <div id="fwBanner"></div>
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
+      <h2 id="todayTitle" style="margin:0">Aujourd'hui</h2>
+      <button class="ghost" id="typeBtn" style="min-height:36px;padding:6px 12px"></button>
+    </div>
+    <div class="ringwrap">
+      <div class="ring" aria-hidden="true">
+        <svg viewBox="0 0 120 120"><circle cx="60" cy="60" r="52" fill="none" stroke="var(--mat2)" stroke-width="12"/>
+        <circle class="v" id="ringV" cx="60" cy="60" r="52" fill="none" stroke="var(--mat)" stroke-width="12" stroke-linecap="round" stroke-dasharray="326.7" stroke-dashoffset="326.7"/></svg>
+        <div class="in"><b id="ringN">–</b><span id="ringL">kcal restantes</span></div>
+      </div>
+      <div class="mute" id="ringSub"></div>
+    </div>
+    <div class="bars" id="macroBars"></div>
+  </div>
+  <div class="card"><h2>Pesée du matin</h2><div id="weighBox"></div></div>
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+      <h2 style="margin:0">Repas du jour</h2>
+      <button id="addMealBtn" class="red">+ Ajouter</button>
+    </div>
+    <div id="mealList" style="margin-top:8px"></div>
+  </div>
+</section>
+
+<section class="view" id="v-courbe">
+  <div class="card">
+    <h2 id="trendTitle">Ta tendance</h2>
+    <p class="mute" id="trendSub"></p>
+    <div class="fig" id="chartBox"><svg id="chart"></svg></div>
+    <div class="legend">
+      <span><i style="background:var(--mat)"></i>Tendance lissée</span>
+      <span><i style="background:var(--glove);height:2px"></i>Trajectoire visée</span>
+      <span><i style="background:var(--mute);height:6px;width:6px;border-radius:50%"></i>Pesées</span>
+    </div>
+  </div>
+  <div class="card"><h2>Historique</h2><div class="scroll"><table id="histT"></table></div></div>
+</section>
+
+<section class="view" id="v-coach">
+  <div class="card" id="weekCard"></div>
+  <div class="card">
+    <h2>Demander à Claude</h2>
+    <p class="mute">Le bouton copie un résumé de tes 14 derniers jours. Colle-le dans Claude avec ta question, ou envoie-lui une photo de repas : il l'ajoutera à ton Google Sheet.</p>
+    <div class="btns"><button id="copyCtx">Copier mon résumé</button><a id="openClaude" href="https://claude.ai/new" target="_blank" rel="noopener" style="display:flex"><button class="ghost" style="width:100%">Ouvrir Claude</button></a></div>
+  </div>
+</section>
+
+<section class="view" id="v-reglages">
+  <div class="card">
+    <h2>Connexion à ton Google Sheet</h2>
+    <p class="mute" id="connState"></p>
+    <form id="connForm">
+      <label for="connIn">Code de connexion</label>
+      <input id="connIn" placeholder="Colle ici le code donné par Claude" autocomplete="off">
+      <div class="btns" style="margin-top:10px"><button type="submit">Connecter</button><button type="button" class="ghost" id="syncBtn">Synchroniser</button></div>
+    </form>
+  </div>
+  <div class="card">
+    <h2>Mes objectifs</h2>
+    <form id="setForm">
+      <div class="grid2">
+        <div><label for="sTrain">Kcal jour boxe</label><input id="sTrain" type="number" inputmode="numeric"></div>
+        <div><label for="sRest">Kcal jour repos</label><input id="sRest" type="number" inputmode="numeric"></div>
+        <div><label for="sProt">Protéines (g)</label><input id="sProt" type="number" inputmode="numeric"></div>
+        <div><label for="sFat">Lipides (g)</label><input id="sFat" type="number" inputmode="numeric"></div>
+        <div><label for="sTarget">Poids visé le matin du combat</label><input id="sTarget" type="number" step="0.1" inputmode="decimal"></div>
+        <div><label for="sComp">Date de la pesée</label><input id="sComp" type="date"></div>
+      </div>
+      <div style="margin-top:12px"><label>Jours de boxe</label><div class="btns" id="sDays"></div></div>
+      <div class="btns" style="margin-top:14px"><button type="submit">Enregistrer</button></div>
+    </form>
+  </div>
+  <div class="card"><h2>Historique des ajustements</h2><div id="adjList" class="mute"></div></div>
+  <div class="card mute">
+    <h2 style="color:var(--ink)">Bon à savoir</h2>
+    <p>Poids lissé : moyenne de tes pesées corrigée de son retard, pour ne pas réagir aux variations d'eau. Dépense réelle : calculée à partir de ce que tu notes et de l'évolution de ton poids. Repères : perte de 0,5 à 1 kg par semaine et alimentation pauvre en fibres les 4 derniers jours (position ISSN 2025 sur les sports de combat). Valeurs des aliments : moyennes approximatives inspirées de la table Ciqual de l'ANSES.</p>
+  </div>
+</section>
+</main>
+
+<nav id="nav">
+  <a href="#today" data-v="today"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/></svg>Aujourd'hui</a>
+  <a href="#courbe" data-v="courbe"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 17l6-6 4 4 8-8"/></svg>Courbe</a>
+  <a href="#coach" data-v="coach"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 5h16v11H8l-4 4z"/></svg>Coach</a>
+  <a href="#reglages" data-v="reglages"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M5 19l2-2M17 7l2-2"/></svg>Réglages</a>
+</nav>
+
+<div class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="shT">
+  <div class="pane">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <h2 id="shT" style="margin:0">Ajouter un repas</h2>
+      <button class="ghost" id="shClose" style="min-height:36px">Fermer</button>
+    </div>
+    <div class="tabs" id="shTabs">
+      <button data-m="aliments" class="on">Aliments</button><button data-m="recents">Récents</button><button data-m="manuel">Manuel</button><button data-m="photo">Photo</button>
+    </div>
+    <div id="mAliments">
+      <input id="foodQ" placeholder="Chercher : riz, poulet, skyr…" autocomplete="off">
+      <div class="foods" id="foodList"></div>
+      <div class="basket" id="basket"></div>
+    </div>
+    <div id="mRecents" hidden><div class="foods" id="recentList"></div></div>
+    <div id="mManuel" hidden>
+      <label for="manName">Nom</label><input id="manName" placeholder="Ex. : Kebab sans frites">
+      <div class="grid4" style="margin-top:8px">
+        <div><label for="manK">Kcal</label><input id="manK" type="number" inputmode="numeric"></div>
+        <div><label for="manP">Prot.</label><input id="manP" type="number" inputmode="numeric"></div>
+        <div><label for="manC">Gluc.</label><input id="manC" type="number" inputmode="numeric"></div>
+        <div><label for="manF">Lip.</label><input id="manF" type="number" inputmode="numeric"></div>
+      </div>
+      <div class="btns" style="margin-top:12px"><button id="manSave">Enregistrer</button></div>
+    </div>
+    <div id="mPhoto" hidden>
+      <p>Prends ton assiette en photo et envoie-la à Claude, dans ta conversation habituelle. Il estime le repas avec toi et l'ajoute directement à ton Google Sheet. Il apparaît ici à la prochaine synchronisation.</p>
+      <a href="https://claude.ai/new" target="_blank" rel="noopener" style="display:flex"><button style="width:100%">Ouvrir Claude</button></a>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+{
+{{CALC}}
+{{APP}}
+}
+</script>
+</body>
+</html>
