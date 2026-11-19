@@ -152,6 +152,9 @@ function fetchJow(url) {
 function importRecipe(b) {
   const url = String(b.url || '').trim();
   if (!JOW.test(url)) throw new Error('lien');
+  // Menu partagé depuis l'appli Jow : on lit directement les données du menu
+  const q = {}; (url.split('?')[1] || '').split('&').forEach(kv => { const i = kv.indexOf('='); if (i > 0) q[kv.slice(0, i)] = decodeURIComponent(kv.slice(i + 1)); });
+  if (q.sharingId && q.key && q.userId) return importMenu(q);
   const f = fetchJow(url);
   if (f.code !== 200) throw new Error('jow ' + f.code);
   const html = f.html;
@@ -166,6 +169,21 @@ function importRecipe(b) {
   const text = html.replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>/gi, ' ').replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').slice(0, 20000);
   const res = gemini([{ text: RECIPE_PROMPT + '\n\nADRESSE : ' + f.url + '\n\nTEXTE DE LA PAGE :\n' + text + '\n\nDONNÉES DE LA PAGE :\n' + data }]);
   return { recipes: (res && res.recettes) || [], finalUrl: f.url, preview: text.slice(0, 300) };
+}
+
+const MENU_PROMPT = `Voici les données JSON d'un menu partagé depuis l'appli Jow. Extrais chaque recette du menu.
+Pour chaque recette : son nom, ses ingrédients avec quantités (pour UNE portion si les données le permettent), et ses valeurs nutritionnelles PAR PORTION. Si les données contiennent des valeurs nutritionnelles, reprends-les en les ramenant à une portion. Sinon, estime-les par portion à partir des ingrédients (table Ciqual, sans sous-estimer les matières grasses).
+Si un identifiant et un slug de recette sont présents, construis "lien" sous la forme https://jow.com/fr/recipes/SLUG-ID, sinon laisse "".
+Réponds uniquement avec un objet JSON :
+{"recettes":[{"nom":"Poulet impérial","lien":"","ingredients":["120 g de poulet","75 g de riz"],"parPortion":{"kcal":650,"proteines":40,"glucides":70,"lipides":20},"source":"donnees|estimation"}]}`;
+
+function importMenu(q) {
+  const api = 'https://api.jow.fr/public/share/link/details?key=' + encodeURIComponent(q.key) + '&userId=' + encodeURIComponent(q.userId) + '&sharingId=' + encodeURIComponent(q.sharingId);
+  const r = UrlFetchApp.fetch(api, { muteHttpExceptions: true, headers: { 'Accept': 'application/json, text/plain, */*', 'Accept-Language': 'fr-FR', 'Origin': 'https://jow.fr', 'Referer': 'https://jow.fr/', 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/131 Safari/537.36' } });
+  if (r.getResponseCode() !== 200) throw new Error('api jow ' + r.getResponseCode() + ' : ' + r.getContentText().slice(0, 150));
+  const json = r.getContentText();
+  const res = gemini([{ text: MENU_PROMPT + '\n\nDONNÉES :\n' + json.slice(0, 120000) }]);
+  return { recipes: (res && res.recettes) || [], finalUrl: 'https://jow.fr/cooking/recipes-selection/' + q.sharingId, preview: json.slice(0, 300) };
 }
 
 function gemini(parts) {

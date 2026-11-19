@@ -377,7 +377,7 @@ async function importOne(url, portions, parts) {
   if (!r.ok) throw new Error(r.error === 'nokey' ? 'clé Gemini manquante' : r.error === 'quota' ? 'quota' : /action inconnue|importRecipe|is not defined/.test(r.error) ? 'script Google pas à jour' : r.error);
   if (Array.isArray(r.links) && r.links.length) return { links: r.links };
   const list = Array.isArray(r.recipes) ? r.recipes : r.recipe ? [r.recipe] : [];
-  const recs = list.filter(v => v && v.parPortion && +v.parPortion.kcal).map(v => makeRec(v, list.length === 1 ? url : (r.finalUrl || url), portions, parts));
+  const recs = list.filter(v => v && v.parPortion && +v.parPortion.kcal).map(v => makeRec(v, v.lien || (list.length === 1 ? url : (r.finalUrl || url)), portions, parts));
   if (!recs.length) throw new Error('aucune recette lisible' + (r.preview ? ' (page : « ' + String(r.preview).slice(0, 120) + '… »)' : ''));
   for (const rec of recs) push({ action: 'setRecipe', recipe: rec });
   return { recs };
