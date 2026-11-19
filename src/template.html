@@ -38,6 +38,16 @@ header{padding-top:max(18px,env(safe-area-inset-top))}
 .basket .it{grid-template-columns:minmax(0,1fr) 80px 70px 28px}
 .sync{font-size:12px;opacity:.85}
 .tabs{grid-template-columns:repeat(4,minmax(0,1fr))}
+nav{grid-template-columns:repeat(5,minmax(0,1fr))}
+nav a{font-size:11px}
+.rec{border-top:1px solid var(--line);padding:12px 0}
+.rec:first-child{border-top:0}
+.rec h3{margin:0 0 4px;font-size:16px}
+.rec .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px}
+.rec select{width:auto;min-width:120px}
+.rec details{font-size:14px;color:var(--mute);margin-top:6px}
+.mic{flex:0 0 auto}
+.mic.on{background:var(--glove);color:#fff}
 .tabs button{padding:10px 4px;font-size:14px}
 </style>
 </head>
@@ -100,6 +110,26 @@ header{padding-top:max(18px,env(safe-area-inset-top))}
   </div>
 </section>
 
+<section class="view" id="v-recettes">
+  <div class="card">
+    <h2>Importer une recette Jow</h2>
+    <p class="mute" style="margin-top:0">Dans Jow, ouvre la recette, touche <b>Partager</b> et choisis <b>KABA Fight</b>. Ou colle le lien ici.</p>
+    <form id="recForm">
+      <input id="recUrl" placeholder="https://jow.com/fr/recipes/…" autocomplete="off" inputmode="url">
+      <div class="grid2" style="margin-top:8px">
+        <div><label for="recPortions">Portions commandées dans Jow</label><select id="recPortions"><option>1</option><option selected>2</option><option>3</option><option>4</option></select></div>
+        <div><label for="recParts">Tu les sépares en</label><select id="recParts"><option value="2">2 parts</option><option value="3" selected>3 parts</option><option value="4">4 parts</option><option value="5">5 parts</option><option value="6">6 parts</option></select></div>
+      </div>
+      <div class="btns" style="margin-top:10px"><button type="submit" id="recBtn">Importer</button></div>
+    </form>
+    <div id="recOut"></div>
+  </div>
+  <div class="card">
+    <h2>Mes recettes</h2>
+    <div id="recList"></div>
+  </div>
+</section>
+
 <section class="view" id="v-reglages">
   <div class="card">
     <h2>Connexion à ton Google Sheet</h2>
@@ -137,6 +167,7 @@ header{padding-top:max(18px,env(safe-area-inset-top))}
   <a href="#today" data-v="today"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/></svg>Aujourd'hui</a>
   <a href="#courbe" data-v="courbe"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 17l6-6 4 4 8-8"/></svg>Courbe</a>
   <a href="#coach" data-v="coach"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 5h16v11H8l-4 4z"/></svg>Coach</a>
+  <a href="#recettes" data-v="recettes"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 11h16a8 8 0 0 1-16 0zM9 7c0-2 2-2 2-4M14 7c0-2 2-2 2-4"/></svg>Recettes</a>
   <a href="#reglages" data-v="reglages"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M5 19l2-2M17 7l2-2"/></svg>Réglages</a>
 </nav>
 
@@ -147,7 +178,7 @@ header{padding-top:max(18px,env(safe-area-inset-top))}
       <button class="ghost" id="shClose" style="min-height:36px">Fermer</button>
     </div>
     <div class="tabs" id="shTabs">
-      <button data-m="aliments" class="on">Aliments</button><button data-m="recents">Récents</button><button data-m="manuel">Manuel</button><button data-m="photo">Photo</button>
+      <button data-m="aliments" class="on">Aliments</button><button data-m="recents">Récents</button><button data-m="manuel">Manuel</button><button data-m="photo">Photo / voix</button>
     </div>
     <div id="mAliments">
       <input id="foodQ" placeholder="Chercher : riz, poulet, skyr…" autocomplete="off">
@@ -171,7 +202,7 @@ header{padding-top:max(18px,env(safe-area-inset-top))}
       <img id="photoPrev" class="preview" alt="" hidden>
       <label for="photoNote" style="margin-top:8px">Précisions ou description (facultatif sans photo)</label>
       <textarea id="photoNote" placeholder="Ex. : cuit avec 1 c. à soupe d'huile ; ou sans photo : 150 g de riz, un blanc de poulet, des haricots verts"></textarea>
-      <div class="btns" style="margin-top:10px"><button id="anaBtn">Analyser</button></div>
+      <div class="btns" style="margin-top:10px"><button type="button" class="ghost mic" id="micBtn" hidden>🎙 Dicter</button><button id="anaBtn">Analyser</button></div>
       <div id="anaOut"></div>
     </div>
   </div>

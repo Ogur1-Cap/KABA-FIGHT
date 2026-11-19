@@ -34,8 +34,8 @@ const LS = {
   get(k, d) { try { const v = localStorage.getItem('kaba.' + k); return v ? JSON.parse(v) : d; } catch { return d; } },
   set(k, v) { try { localStorage.setItem('kaba.' + k, JSON.stringify(v)); } catch {} }
 };
-const S = { p: { ...DEFAULT }, days: {}, adj: [], cfg: LS.get('cfg', null), outbox: LS.get('outbox', []), syncing: false, lastSync: null };
-(function loadCache() { const c = LS.get('cache', null); if (c) { S.p = { ...DEFAULT, ...c.profile }; S.days = c.days || {}; S.adj = c.adj || []; S.lastSync = c.at; } })();
+const S = { p: { ...DEFAULT }, days: {}, adj: [], recipes: [], cfg: LS.get('cfg', null), outbox: LS.get('outbox', []), syncing: false, lastSync: null };
+(function loadCache() { const c = LS.get('cache', null); if (c) { S.p = { ...DEFAULT, ...c.profile }; S.days = c.days || {}; S.adj = c.adj || []; S.recipes = c.recipes || []; S.lastSync = c.at; } })();
 
 function applyLocal(op) {
   const d = op.date && (S.days[op.date] || (S.days[op.date] = { date: op.date, meals: [] }));
@@ -45,13 +45,15 @@ function applyLocal(op) {
   else if (op.action === 'delMeal') { for (const k in S.days) S.days[k].meals = (S.days[k].meals || []).filter(m => m.id !== op.id); }
   else if (op.action === 'setProfile') S.p = { ...S.p, ...op.profile };
   else if (op.action === 'addAdjust') S.adj = [op.adjust, ...S.adj];
+  else if (op.action === 'setRecipe') S.recipes = [...S.recipes.filter(r => r.id !== op.recipe.id), op.recipe];
+  else if (op.action === 'delRecipe') S.recipes = S.recipes.filter(r => r.id !== op.id);
 }
-function saveCache() { LS.set('cache', { profile: S.p, days: S.days, adj: S.adj, at: S.lastSync }); }
+function saveCache() { LS.set('cache', { profile: S.p, days: S.days, adj: S.adj, recipes: S.recipes, at: S.lastSync }); }
 function push(op) {
   applyLocal(op); S.outbox.push(op); LS.set('outbox', S.outbox); saveCache(); renderAll(); sync();
 }
 function setData(data) {
-  S.p = { ...DEFAULT, ...data.profile }; S.days = data.days || {}; S.adj = (data.adj || []).slice().reverse();
+  S.p = { ...DEFAULT, ...data.profile }; S.days = data.days || {}; S.adj = (data.adj || []).slice().reverse(); S.recipes = data.recipes || [];
   for (const op of S.outbox) applyLocal(op);
   S.lastSync = data.at; saveCache(); renderAll();
 }
@@ -125,7 +127,7 @@ function renderToday() {
     };
   }
   const meals = day.meals || [];
-  $('mealList').innerHTML = meals.length ? meals.map(m => '<div class="meal"><div>' + esc(m.name) + '<small>' + esc(m.at || '') + ' · P ' + fr(m.p) + ' · G ' + fr(m.c) + ' · L ' + fr(m.f) + (m.src === 'claude' ? ' · ajouté par Claude' : m.src === 'photo' ? ' · photo' : '') + '</small></div><div class="k">' + fr(m.kcal) + ' kcal<br><button class="x" data-del="' + esc(m.id) + '">supprimer</button></div></div>').join('')
+  $('mealList').innerHTML = meals.length ? meals.map(m => '<div class="meal"><div>' + esc(m.name) + '<small>' + esc(m.at || '') + ' · P ' + fr(m.p) + ' · G ' + fr(m.c) + ' · L ' + fr(m.f) + (m.src === 'claude' ? ' · ajouté par Claude' : m.src === 'photo' ? ' · photo' : m.src === 'recette' ? ' · recette Jow' : '') + '</small></div><div class="k">' + fr(m.kcal) + ' kcal<br><button class="x" data-del="' + esc(m.id) + '">supprimer</button></div></div>').join('')
     : '<p class="mute">Rien pour l’instant. Ajoute ton repas, ou envoie une photo à Claude.</p>';
   for (const b of $('mealList').querySelectorAll('[data-del]')) b.onclick = () => {
     const m = meals.find(x => x.id === b.dataset.del); if (!m) return;
@@ -206,10 +208,10 @@ function renderReglages() {
   }
   $('adjList').innerHTML = S.adj.length ? S.adj.map(a => '<div>' + fdate(a.date) + ' : ' + fr(a.oldTrain) + '/' + fr(a.oldRest) + ' → <b style="color:var(--ink)">' + fr(a.train) + '/' + fr(a.rest) + '</b> kcal (dépense ' + fr(a.tdee) + ')</div>').join('') : 'Aucun ajustement pour l’instant.';
 }
-function renderAll() { renderHeader(); renderToday(); renderCourbe(); renderCoach(); renderReglages(); }
+function renderAll() { renderHeader(); renderToday(); renderCourbe(); renderCoach(); renderRecettes(); renderReglages(); }
 
 /* ---------- navigation ---------- */
-const VIEWS = ['today', 'courbe', 'coach', 'reglages'];
+const VIEWS = ['today', 'courbe', 'coach', 'recettes', 'reglages'];
 function route() {
   const h = location.hash.slice(1);
   if (h.startsWith('connect=')) { connect(h.slice(8)); history.replaceState(null, '', location.pathname + '#reglages'); }
@@ -343,6 +345,70 @@ function renderDraft() {
     photoB64 = null; draft = null; $('photoIn').value = ''; $('photoPrev').hidden = true; $('photoNote').value = ''; $('anaOut').innerHTML = '';
   };
 }
+
+/* ---------- recettes Jow ---------- */
+const partOf = r => { const k = (r.portions || 2) / (r.parts || 2); return { kcal: Math.round(r.kcal * k), p: Math.round(r.p * k), c: Math.round(r.c * k), f: Math.round(r.f * k) }; };
+function renderRecettes() {
+  const list = S.recipes.slice().sort((a, b) => (b.added || '').localeCompare(a.added || ''));
+  $('recList').innerHTML = list.length ? list.map(r => { const x = partOf(r); return '<div class="rec"><h3>' + esc(r.name) + '</h3>' +
+    '<div class="mute">1 part = <b style="color:var(--mat)">' + fr(x.kcal) + ' kcal</b> · P ' + fr(x.p) + ' g · G ' + fr(x.c) + ' g · L ' + fr(x.f) + ' g <span>(' + r.portions + ' portion' + (r.portions > 1 ? 's' : '') + ' Jow en ' + r.parts + ' parts)</span></div>' +
+    '<div class="row"><select data-parts="' + esc(r.id) + '" aria-label="Nombre de parts">' + [2, 3, 4, 5, 6].map(n => '<option value="' + n + '"' + (n === r.parts ? ' selected' : '') + '>' + n + ' parts</option>').join('') + '</select>' +
+    '<button data-eat="' + esc(r.id) + '">J’en mange 1 part</button></div>' +
+    '<details><summary>Ingrédients et lien</summary><p>' + esc(r.ingredients) + '</p>' + (r.url ? '<a href="' + esc(r.url) + '" target="_blank" rel="noopener" style="color:var(--mat)">Ouvrir dans Jow</a> · ' : '') + '<button class="x" data-delrec="' + esc(r.id) + '">supprimer la recette</button></details></div>'; }).join('')
+    : '<p class="mute">Aucune recette pour l’instant. Importe ta première recette Jow ci-dessus.</p>';
+  for (const s of $('recList').querySelectorAll('[data-parts]')) s.onchange = () => { const r = S.recipes.find(x => x.id === s.dataset.parts); if (r) push({ action: 'setRecipe', recipe: { ...r, parts: +s.value } }); };
+  for (const b of $('recList').querySelectorAll('[data-eat]')) b.onclick = () => { const r = S.recipes.find(x => x.id === b.dataset.eat); if (!r) return; const x = partOf(r); addMeal({ name: r.name + ' (1/' + r.parts + ')', ...x, src: 'recette' }); };
+  for (const b of $('recList').querySelectorAll('[data-delrec]')) b.onclick = () => { push({ action: 'delRecipe', id: b.dataset.delrec }); toast('Recette supprimée'); };
+}
+$('recForm').onsubmit = async e => {
+  e.preventDefault();
+  const url = ($('recUrl').value.match(/https?:\/\/\S+/) || [''])[0];
+  if (!/jow\.(com|fr)\//i.test(url)) { toast('Colle un lien de recette Jow'); return; }
+  if (!S.cfg) { toast('Connecte d’abord ton Google Sheet'); return; }
+  if (!navigator.onLine) { toast('L’import demande une connexion'); return; }
+  $('recBtn').disabled = true; $('recBtn').textContent = 'Import en cours…'; $('recOut').innerHTML = '';
+  try {
+    const r = await fetch(S.cfg.url, { method: 'POST', body: JSON.stringify({ token: S.cfg.token, action: 'importRecipe', url }) }).then(x => x.json());
+    if (!r.ok) {
+      $('recOut').innerHTML = '<p class="mute">' + (r.error === 'nokey' ? 'Il manque la clé Gemini dans le script.' : r.error === 'quota' ? 'Limite gratuite atteinte pour le moment, réessaie dans une minute.' : /action inconnue|importRecipe/.test(r.error) ? 'Ton script Google n’est pas encore à jour : colle la dernière version et redéploie.' : 'Import impossible (' + esc(r.error) + ').') + '</p>';
+      return;
+    }
+    const v = r.recipe || {}, pp = v.parPortion || {};
+    if (!pp.kcal) { $('recOut').innerHTML = '<p class="mute">Je n’ai pas trouvé les valeurs de cette recette. Vérifie le lien.</p>'; return; }
+    const rec = { id: 'r' + Date.now(), name: String(v.nom || 'Recette Jow'), url, portions: +$('recPortions').value, parts: +$('recParts').value, kcal: Math.round(+pp.kcal || 0), p: Math.round(+pp.proteines || 0), c: Math.round(+pp.glucides || 0), f: Math.round(+pp.lipides || 0), ingredients: (v.ingredients || []).join(', '), added: today() };
+    push({ action: 'setRecipe', recipe: rec }); $('recUrl').value = '';
+    const x = partOf(rec);
+    toast(rec.name + ' importée : ' + fr(x.kcal) + ' kcal la part');
+  } catch { $('recOut').innerHTML = '<p class="mute">Pas de réponse du Google Sheet. Réessaie dans un moment.</p>'; }
+  finally { $('recBtn').disabled = false; $('recBtn').textContent = 'Importer'; }
+};
+// Partage depuis Jow (Android) : l'appli reçoit le lien dans l'adresse
+(function sharedLink() {
+  const q = new URLSearchParams(location.search);
+  const txt = [q.get('url'), q.get('text'), q.get('title')].filter(Boolean).join(' ');
+  const m = txt.match(/https?:\/\/\S*jow\.(com|fr)\/\S+/i);
+  if (!q.toString()) return;
+  history.replaceState(null, '', location.pathname + '#recettes');
+  if (m) { $('recUrl').value = m[0]; setTimeout(() => $('recForm').requestSubmit(), 400); }
+  else if (txt) toast('Ce partage ne contient pas de lien Jow');
+})();
+
+/* ---------- dictée ---------- */
+(function dictation() {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) return;
+  const btn = $('micBtn'); btn.hidden = false;
+  let rec = null;
+  btn.onclick = () => {
+    if (rec) { rec.stop(); return; }
+    rec = new SR(); rec.lang = 'fr-FR'; rec.interimResults = true; rec.continuous = false;
+    const base = $('photoNote').value ? $('photoNote').value + ' ' : '';
+    rec.onresult = e => { let s = ''; for (const r of e.results) s += r[0].transcript; $('photoNote').value = base + s; };
+    rec.onerror = e => { if (e.error === 'not-allowed') toast('Autorise le micro pour dicter'); else if (e.error !== 'no-speech' && e.error !== 'aborted') toast('Dictée interrompue'); };
+    rec.onend = () => { rec = null; btn.classList.remove('on'); btn.textContent = '🎙 Dicter'; };
+    try { rec.start(); btn.classList.add('on'); btn.textContent = '⏹ Arrêter'; } catch { rec = null; }
+  };
+})();
 
 /* ---------- démarrage ---------- */
 route(); renderAll(); sync();

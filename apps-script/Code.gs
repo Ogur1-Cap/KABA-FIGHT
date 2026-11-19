@@ -22,6 +22,7 @@ function doPost(e) {
   let b;
   try { b = JSON.parse(e.postData.contents); } catch (err) { return out({ ok: false, error: 'json' }); }
   if (b.token !== TOKEN) return out({ ok: false, error: 'cle' });
+  if (b.action === 'importRecipe') { try { return out({ ok: true, recipe: importRecipe(b) }); } catch (err) { return out({ ok: false, error: String(err.message || err) }); } }
   if (b.action === 'analyze') { try { return out({ ok: true, result: analyze(b) }); } catch (err) { return out({ ok: false, error: String(err.message || err) }); } }
   const lock = LockService.getScriptLock();
   lock.waitLock(20000);
@@ -63,6 +64,12 @@ function apply(op) {
   } else if (op.action === 'addAdjust') {
     const a = op.adjust;
     ss.getSheetByName('Ajustements').appendRow(["'" + a.date, a.oldTrain, a.oldRest, a.train, a.rest, a.tdee, a.source || '']);
+  } else if (op.action === 'setRecipe') {
+    const r = op.recipe, sh = recSheet(), row = findRow(sh, 1, r.id);
+    const vals = [r.id, r.name || '', r.url || '', +r.portions || 2, +r.parts || 2, +r.kcal || 0, +r.p || 0, +r.c || 0, +r.f || 0, r.ingredients || '', "'" + (r.added || '')];
+    if (row) sh.getRange(row, 1, 1, vals.length).setValues([vals]); else sh.appendRow(vals);
+  } else if (op.action === 'delRecipe') {
+    const sh = recSheet(), row = findRow(sh, 1, op.id); if (row) sh.deleteRow(row);
   } else throw new Error('action inconnue : ' + op.action);
 }
 
@@ -88,7 +95,8 @@ function readAll() {
     days[k].meals.push({ id: String(id), at: String(at), name: String(name), kcal: +kcal || 0, p: +p || 0, c: +c || 0, f: +f || 0, src: String(src) });
   }
   const adj = rows(ss.getSheetByName('Ajustements')).filter(r => r[0]).map(r => ({ date: day(r[0]), oldTrain: r[1], oldRest: r[2], train: r[3], rest: r[4], tdee: r[5], source: r[6] }));
-  return { profile, days, adj, at: new Date().toISOString() };
+  const recipes = rows(recSheet()).filter(r => r[0]).map(r => ({ id: String(r[0]), name: String(r[1]), url: String(r[2]), portions: +r[3] || 2, parts: +r[4] || 2, kcal: +r[5] || 0, p: +r[6] || 0, c: +r[7] || 0, f: +r[8] || 0, ingredients: String(r[9]), added: day(r[10]) }));
+  return { profile, days, adj, recipes, at: new Date().toISOString() };
 }
 
 const PROMPT = `Tu es nutritionniste du sport et tu aides un boxeur de 26 ans en perte de poids avant une compétition.
@@ -102,9 +110,42 @@ Réponds uniquement avec un objet JSON de cette forme :
 {"nom":"nom court du repas","items":[{"aliment":"riz blanc cuit","grammes":150,"kcal":195,"proteines":4,"glucides":42,"lipides":0.5}],"confiance":"faible|moyenne|bonne","question":"une question courte pour préciser l'estimation, ou chaîne vide"}`;
 
 function analyze(b) {
-  if (!GEMINI_KEY || GEMINI_KEY === 'A_REMPLACER') throw new Error('nokey');
   const parts = [{ text: PROMPT + '\n\nPrécisions de l\'utilisateur : ' + (b.note || 'aucune') }];
   if (b.image) parts.push({ inline_data: { mime_type: 'image/jpeg', data: b.image } });
+  return gemini(parts);
+}
+
+// Onglet Recettes (créé automatiquement) : valeurs nutritionnelles PAR PORTION Jow
+function recSheet() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sh = ss.getSheetByName('Recettes');
+  if (!sh) {
+    sh = ss.insertSheet('Recettes');
+    sh.appendRow(['ID', 'Recette', 'Lien', 'Portions Jow', 'Parts', 'Kcal par portion', 'Protéines par portion (g)', 'Glucides par portion (g)', 'Lipides par portion (g)', 'Ingrédients', 'Ajoutée le']);
+    sh.setFrozenRows(1); sh.getRange(1, 1, 1, 11).setFontWeight('bold');
+  }
+  return sh;
+}
+
+const RECIPE_PROMPT = `Voici le texte d'une page de recette Jow. Extrais la recette.
+Si la page donne des valeurs nutritionnelles par portion, reprends-les exactement. Sinon, estime-les par portion à partir des ingrédients (table Ciqual, sans sous-estimer les matières grasses).
+Réponds uniquement avec un objet JSON :
+{"nom":"nom de la recette","ingredients":["2 escalopes de poulet","120 g de riz"],"parPortion":{"kcal":525,"proteines":46,"glucides":22,"lipides":28},"source":"page|estimation"}`;
+
+function importRecipe(b) {
+  const url = String(b.url || '').trim();
+  if (!/^https:\/\/([a-z0-9-]+\.)*jow\.(com|fr)\//i.test(url)) throw new Error('lien');
+  const r = UrlFetchApp.fetch(url, { muteHttpExceptions: true, followRedirects: true, headers: { 'Accept-Language': 'fr-FR' } });
+  if (r.getResponseCode() !== 200) throw new Error('jow ' + r.getResponseCode());
+  const html = r.getContentText();
+  // Les données peuvent être dans des blocs JSON (Next.js, schema.org) : on les garde aussi
+  const data = (html.match(/<script[^>]*(__NEXT_DATA__|ld\+json)[^>]*>[\s\S]*?<\/script>/gi) || []).join(' ').replace(/<[^>]+>/g, ' ').slice(0, 25000);
+  const text = html.replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>/gi, ' ').replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').slice(0, 20000);
+  return gemini([{ text: RECIPE_PROMPT + '\n\nTEXTE DE LA PAGE :\n' + text + '\n\nDONNÉES DE LA PAGE :\n' + data }]);
+}
+
+function gemini(parts) {
+  if (!GEMINI_KEY || GEMINI_KEY === 'A_REMPLACER') throw new Error('nokey');
   const body = { contents: [{ parts }], generationConfig: { responseMimeType: 'application/json', temperature: 0.2 } };
   let last = '';
   for (const m of GEMINI_MODELS) {
