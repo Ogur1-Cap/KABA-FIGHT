@@ -22,7 +22,7 @@ function doPost(e) {
   let b;
   try { b = JSON.parse(e.postData.contents); } catch (err) { return out({ ok: false, error: 'json' }); }
   if (b.token !== TOKEN) return out({ ok: false, error: 'cle' });
-  if (b.action === 'importRecipe') { try { return out({ ok: true, recipe: importRecipe(b) }); } catch (err) { return out({ ok: false, error: String(err.message || err) }); } }
+  if (b.action === 'importRecipe') { try { return out({ ok: true, ...importRecipe(b) }); } catch (err) { return out({ ok: false, error: String(err.message || err) }); } }
   if (b.action === 'analyze') { try { return out({ ok: true, result: analyze(b) }); } catch (err) { return out({ ok: false, error: String(err.message || err) }); } }
   const lock = LockService.getScriptLock();
   lock.waitLock(20000);
@@ -127,21 +127,45 @@ function recSheet() {
   return sh;
 }
 
-const RECIPE_PROMPT = `Voici le texte d'une page de recette Jow. Extrais la recette.
+const RECIPE_PROMPT = `Voici le texte d'une page Jow. Elle contient une recette ou un menu de plusieurs recettes. Extrais chaque recette.
 Si la page donne des valeurs nutritionnelles par portion, reprends-les exactement. Sinon, estime-les par portion à partir des ingrédients (table Ciqual, sans sous-estimer les matières grasses).
 Réponds uniquement avec un objet JSON :
-{"nom":"nom de la recette","ingredients":["2 escalopes de poulet","120 g de riz"],"parPortion":{"kcal":525,"proteines":46,"glucides":22,"lipides":28},"source":"page|estimation"}`;
+{"recettes":[{"nom":"nom de la recette","ingredients":["2 escalopes de poulet","120 g de riz"],"parPortion":{"kcal":525,"proteines":46,"glucides":22,"lipides":28},"source":"page|estimation"}]}
+S'il n'y a aucune recette lisible, renvoie {"recettes":[]}.`;
+
+const JOW = /^https:\/\/([a-z0-9-]+\.)*jow\.(com|fr)\//i;
+function fetchJow(url) {
+  for (let hop = 0; hop < 4; hop++) {
+    const r = UrlFetchApp.fetch(url, { muteHttpExceptions: true, followRedirects: false, headers: { 'Accept-Language': 'fr-FR', 'User-Agent': 'Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/131 Mobile Safari/537.36' } });
+    const code = r.getResponseCode(), h = r.getAllHeaders();
+    const loc = h.Location || h.location;
+    if (code >= 300 && code < 400 && loc) { url = loc.startsWith('http') ? loc : url.replace(/^(https:\/\/[^/]+).*/, '$1') + loc; continue; }
+    const html = r.getContentText();
+    // redirection par balise meta ou par script vers une autre page Jow
+    const m = html.match(/http-equiv=["']refresh["'][^>]*url=([^"'>\s]+)/i) || html.match(/location(?:\.href)?\s*=\s*["'](https:\/\/[^"']*jow\.(?:com|fr)[^"']*)["']/i);
+    if (m && JOW.test(m[1]) && m[1] !== url && hop < 3) { url = m[1].replace(/&amp;/g, '&'); continue; }
+    return { code, html, url };
+  }
+  throw new Error('trop de redirections');
+}
 
 function importRecipe(b) {
   const url = String(b.url || '').trim();
-  if (!/^https:\/\/([a-z0-9-]+\.)*jow\.(com|fr)\//i.test(url)) throw new Error('lien');
-  const r = UrlFetchApp.fetch(url, { muteHttpExceptions: true, followRedirects: true, headers: { 'Accept-Language': 'fr-FR' } });
-  if (r.getResponseCode() !== 200) throw new Error('jow ' + r.getResponseCode());
-  const html = r.getContentText();
-  // Les données peuvent être dans des blocs JSON (Next.js, schema.org) : on les garde aussi
+  if (!JOW.test(url)) throw new Error('lien');
+  const f = fetchJow(url);
+  if (f.code !== 200) throw new Error('jow ' + f.code);
+  const html = f.html;
+  // Page de menu : on renvoie les liens des recettes pour les importer une par une
+  if (!/\/recipes\//.test(f.url)) {
+    const links = {};
+    (html.match(/(https:\/\/(?:www\.)?jow\.(?:com|fr))?\/[a-z]{2}\/recipes\/[a-z0-9-]+/gi) || []).forEach(l => { links[(l.startsWith('http') ? '' : 'https://jow.com') + l] = 1; });
+    const list = Object.keys(links);
+    if (list.length) return { links: list };
+  }
   const data = (html.match(/<script[^>]*(__NEXT_DATA__|ld\+json)[^>]*>[\s\S]*?<\/script>/gi) || []).join(' ').replace(/<[^>]+>/g, ' ').slice(0, 25000);
   const text = html.replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>/gi, ' ').replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').slice(0, 20000);
-  return gemini([{ text: RECIPE_PROMPT + '\n\nTEXTE DE LA PAGE :\n' + text + '\n\nDONNÉES DE LA PAGE :\n' + data }]);
+  const res = gemini([{ text: RECIPE_PROMPT + '\n\nADRESSE : ' + f.url + '\n\nTEXTE DE LA PAGE :\n' + text + '\n\nDONNÉES DE LA PAGE :\n' + data }]);
+  return { recipes: (res && res.recettes) || [], finalUrl: f.url, preview: text.slice(0, 300) };
 }
 
 function gemini(parts) {

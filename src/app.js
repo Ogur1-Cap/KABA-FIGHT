@@ -365,36 +365,47 @@ function renderRecettes() {
 function mealTarget() { const p = S.p; return Math.round(((p.kcalTrain * (p.trainingDays || []).length + p.kcalRest * (7 - (p.trainingDays || []).length)) / 7) * 0.4); }
 function suggestParts(r) { const total = r.kcal * (r.portions || 2); return clamp(Math.ceil(total / mealTarget() - 0.05), 1, 6); }
 const jowLinks = txt => [...new Set((String(txt).match(/https?:\/\/[^\s"'<>]*jow\.(com|fr)\/[^\s"'<>]+/gi) || []))];
-async function importOne(url, portions, parts) {
-  const r = await fetch(S.cfg.url, { method: 'POST', body: JSON.stringify({ token: S.cfg.token, action: 'importRecipe', url }) }).then(x => x.json());
-  if (!r.ok) throw new Error(r.error === 'nokey' ? 'clé Gemini manquante' : r.error === 'quota' ? 'quota' : /action inconnue|importRecipe/.test(r.error) ? 'script pas à jour' : r.error);
-  const v = r.recipe || {}, pp = v.parPortion || {};
-  if (!pp.kcal) throw new Error('valeurs introuvables');
+function makeRec(v, url, portions, parts) {
+  const pp = v.parPortion || {};
   const rec = { id: 'r' + Date.now() + Math.floor(Math.random() * 1000), name: String(v.nom || 'Recette Jow'), url, portions, parts: 2, kcal: Math.round(+pp.kcal || 0), p: Math.round(+pp.proteines || 0), c: Math.round(+pp.glucides || 0), f: Math.round(+pp.lipides || 0), ingredients: (v.ingredients || []).join(', '), added: today() };
   rec.parts = parts || suggestParts(rec);
-  push({ action: 'setRecipe', recipe: rec });
   return rec;
+}
+// Renvoie { links } (menu Jow à déplier) ou { recs } (recettes importées)
+async function importOne(url, portions, parts) {
+  const r = await fetch(S.cfg.url, { method: 'POST', body: JSON.stringify({ token: S.cfg.token, action: 'importRecipe', url }) }).then(x => x.json());
+  if (!r.ok) throw new Error(r.error === 'nokey' ? 'clé Gemini manquante' : r.error === 'quota' ? 'quota' : /action inconnue|importRecipe|is not defined/.test(r.error) ? 'script Google pas à jour' : r.error);
+  if (Array.isArray(r.links) && r.links.length) return { links: r.links };
+  const list = Array.isArray(r.recipes) ? r.recipes : r.recipe ? [r.recipe] : [];
+  const recs = list.filter(v => v && v.parPortion && +v.parPortion.kcal).map(v => makeRec(v, list.length === 1 ? url : (r.finalUrl || url), portions, parts));
+  if (!recs.length) throw new Error('aucune recette lisible' + (r.preview ? ' (page : « ' + String(r.preview).slice(0, 120) + '… »)' : ''));
+  for (const rec of recs) push({ action: 'setRecipe', recipe: rec });
+  return { recs };
 }
 async function importAll(urls) {
   if (!S.cfg) { toast('Connecte d’abord ton Google Sheet'); return; }
   if (!navigator.onLine) { toast('L’import demande une connexion'); return; }
   const portions = +$('recPortions').value, parts = +$('recParts').value;
+  const queue = urls.slice(), seen = new Set(urls); let done = 0;
   $('recBtn').disabled = true; const lines = [];
   const show = () => { $('recOut').innerHTML = '<div style="margin-top:10px">' + lines.join('') + '</div>'; };
-  for (let i = 0; i < urls.length; i++) {
-    $('recBtn').textContent = 'Import ' + (i + 1) + '/' + urls.length + '…';
+  while (queue.length) {
+    const url = queue.shift(); done++;
+    $('recBtn').textContent = 'Import ' + done + '/' + (done + queue.length) + '…';
     try {
-      let rec;
-      try { rec = await importOne(urls[i], portions, parts); }
-      catch (e) { if (e.message === 'quota') { await new Promise(r => setTimeout(r, 20000)); rec = await importOne(urls[i], portions, parts); } else throw e; }
-      const x = partOf(rec);
-      lines.push('<p style="margin:4px 0">✅ <b>' + esc(rec.name) + '</b> : ' + rec.parts + ' parts de ' + fr(x.kcal) + ' kcal (' + fr(x.p) + ' g prot.)</p>');
-    } catch (e) { lines.push('<p class="mute" style="margin:4px 0">❌ ' + esc(urls[i].slice(0, 60)) + '… : ' + esc(e.message) + '</p>'); }
+      let res;
+      try { res = await importOne(url, portions, parts); }
+      catch (e) { if (e.message === 'quota') { await new Promise(r => setTimeout(r, 20000)); res = await importOne(url, portions, parts); } else throw e; }
+      if (res.links) {
+        const fresh = res.links.filter(l => !seen.has(l)); fresh.forEach(l => { seen.add(l); queue.push(l); });
+        lines.push('<p style="margin:4px 0">📋 Menu Jow : ' + fresh.length + ' recette' + (fresh.length > 1 ? 's' : '') + ' trouvée' + (fresh.length > 1 ? 's' : '') + '</p>');
+      } else for (const rec of res.recs) { const x = partOf(rec); lines.push('<p style="margin:4px 0">✅ <b>' + esc(rec.name) + '</b> : ' + rec.parts + ' part' + (rec.parts > 1 ? 's' : '') + ' de ' + fr(x.kcal) + ' kcal (' + fr(x.p) + ' g prot.)</p>'); }
+    } catch (e) { lines.push('<p class="mute" style="margin:4px 0">❌ ' + esc(url.slice(0, 60)) + '… : ' + esc(e.message) + '</p>'); }
     show();
-    if (i < urls.length - 1) await new Promise(r => setTimeout(r, 4000));
+    if (queue.length) await new Promise(r => setTimeout(r, 4000));
   }
   $('recBtn').disabled = false; $('recBtn').textContent = 'Importer'; $('recUrl').value = '';
-  toast(urls.length > 1 ? 'Import terminé' : 'Recette importée');
+  toast('Import terminé');
 }
 $('recForm').onsubmit = e => {
   e.preventDefault();
