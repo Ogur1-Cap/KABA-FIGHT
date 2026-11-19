@@ -299,6 +299,19 @@ $('chatSend').onclick = async () => {
   } catch (e) { S.chat.pop(); $('chatIn').value = q; toast(e && e.name === 'AbortError' ? 'Gemini met trop de temps, réessaie plus tard' : 'Pas de réponse du Google Sheet'); }
   finally { S.chat = S.chat.slice(-40); LS.set('chat', S.chat); $('chatSend').disabled = false; renderChat(); }
 };
+/* ---------- lien vers la discussion Claude ---------- */
+const CLAUDE_DEFAULT = 'https://claude.ai/code/session_01UEcwpY45cjoMyqvk3D7UUN';
+const claudeUrl = () => LS.get('claudeUrl', CLAUDE_DEFAULT) || CLAUDE_DEFAULT;
+$('claudeUrl').value = claudeUrl();
+$('claudeSave').onclick = () => { const u = $('claudeUrl').value.trim(); if (!/^https:\/\/claude\.ai\//.test(u)) { toast('Colle un lien qui commence par https://claude.ai/'); return; } LS.set('claudeUrl', u); toast('Lien enregistré'); };
+$('claudeOpen').onclick = () => window.open(claudeUrl(), '_blank');
+$('claudeCopy').onclick = async () => {
+  let txt = '';
+  try { txt = 'Point KABA Fight :\n' + context(); } catch (e) { txt = 'Point KABA Fight : (données pas encore synchronisées)'; }
+  try { await navigator.clipboard.writeText(txt); toast('Point copié : colle-le dans la discussion'); }
+  catch (e) { toast('Copie impossible, ouvre simplement Claude'); }
+  setTimeout(() => window.open(claudeUrl(), '_blank'), 400);
+};
 $('chatClear').onclick = () => { S.chat = []; LS.set('chat', S.chat); renderChat(); };
 
 /* ---------- ajout de repas ---------- */

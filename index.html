@@ -139,6 +139,7 @@ nav a{font-size:11px}
 .quick button{min-height:54px;font-size:16px}
 .ring{width:min(200px,52vw)}
 .ring .in b{font-size:44px}
+.claude{border:1px solid var(--mat)}
 .msg{padding:10px 12px;border-radius:14px;margin:8px 0;max-width:88%;white-space:pre-wrap;line-height:1.45}
 .msg.user{background:var(--mat);color:var(--on);margin-left:auto}
 .msg.assistant{background:#101013;border:1px solid var(--line)}
@@ -200,6 +201,14 @@ nav a{font-size:11px}
 </section>
 
 <section class="view" id="v-coach">
+  <div class="card claude">
+    <h2>Parler à Claude</h2>
+    <p class="mute" style="margin-top:0">Pour un vrai point coaching, ouvre ta discussion avec Claude. « Copier mon point » met dans le presse-papiers ton poids, tes repas du jour, tes recettes en cours et tes 14 derniers jours : tu n'as plus qu'à coller.</p>
+    <div class="btns"><button type="button" id="claudeCopy">Copier mon point + ouvrir</button><button type="button" class="ghost" id="claudeOpen">Ouvrir Claude</button></div>
+    <details style="margin-top:8px;font-size:13px" class="mute"><summary>Changer le lien de la discussion</summary>
+      <input id="claudeUrl" type="url" autocomplete="off" style="margin-top:6px"><button type="button" class="ghost" id="claudeSave" style="margin-top:6px">Enregistrer le lien</button>
+    </details>
+  </div>
   <div class="card" id="weekCard"></div>
   <div class="card">
     <h2>Ton coach</h2>
@@ -721,6 +730,19 @@ $('chatSend').onclick = async () => {
     else { S.chat.pop(); $('chatIn').value = q; toast(/action inconnue/.test(r.error) ? 'Script Google pas à jour pour le coach' : /gemini 5|gemini lent/.test(r.error) ? 'Gemini est saturé, réessaie dans un moment' : r.error === 'quota' ? 'Limite gratuite atteinte, réessaie dans une minute' : 'Erreur : ' + r.error); }
   } catch (e) { S.chat.pop(); $('chatIn').value = q; toast(e && e.name === 'AbortError' ? 'Gemini met trop de temps, réessaie plus tard' : 'Pas de réponse du Google Sheet'); }
   finally { S.chat = S.chat.slice(-40); LS.set('chat', S.chat); $('chatSend').disabled = false; renderChat(); }
+};
+/* ---------- lien vers la discussion Claude ---------- */
+const CLAUDE_DEFAULT = 'https://claude.ai/code/session_01UEcwpY45cjoMyqvk3D7UUN';
+const claudeUrl = () => LS.get('claudeUrl', CLAUDE_DEFAULT) || CLAUDE_DEFAULT;
+$('claudeUrl').value = claudeUrl();
+$('claudeSave').onclick = () => { const u = $('claudeUrl').value.trim(); if (!/^https:\/\/claude\.ai\//.test(u)) { toast('Colle un lien qui commence par https://claude.ai/'); return; } LS.set('claudeUrl', u); toast('Lien enregistré'); };
+$('claudeOpen').onclick = () => window.open(claudeUrl(), '_blank');
+$('claudeCopy').onclick = async () => {
+  let txt = '';
+  try { txt = 'Point KABA Fight :\n' + context(); } catch (e) { txt = 'Point KABA Fight : (données pas encore synchronisées)'; }
+  try { await navigator.clipboard.writeText(txt); toast('Point copié : colle-le dans la discussion'); }
+  catch (e) { toast('Copie impossible, ouvre simplement Claude'); }
+  setTimeout(() => window.open(claudeUrl(), '_blank'), 400);
 };
 $('chatClear').onclick = () => { S.chat = []; LS.set('chat', S.chat); renderChat(); };
 
