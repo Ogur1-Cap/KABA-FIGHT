@@ -297,7 +297,8 @@ function setMode(m) {
   $('mAliments').hidden = m !== 'aliments'; $('mRecents').hidden = m !== 'recents'; $('mManuel').hidden = m !== 'manuel'; $('mPhoto').hidden = m !== 'photo';
   if (m === 'recents') renderRecents();
 }
-$('addMealBtn').onclick = openSheet; $('shClose').onclick = closeSheet;
+$('addMealBtn').onclick = openSheet; $('quickMeal').onclick = openSheet;
+$('quickWeigh').onclick = () => { const b = $('weighBox'); b.scrollIntoView({ behavior: 'smooth', block: 'center' }); setTimeout(() => { if ($('wIn')) $('wIn').focus(); else if ($('wEdit')) $('wEdit').click(); }, 350); }; $('shClose').onclick = closeSheet;
 $('sheet').onclick = e => { if (e.target === $('sheet')) closeSheet(); };
 for (const b of $('shTabs').querySelectorAll('button')) b.onclick = () => setMode(b.dataset.m);
 const norm = s => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
