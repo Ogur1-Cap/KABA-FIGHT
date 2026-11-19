@@ -339,7 +339,7 @@ $('anaBtn').onclick = async () => {
     const ctl = new AbortController(), tm = setTimeout(() => ctl.abort(), 90000);
     const r = await fetch(S.cfg.url, { method: 'POST', signal: ctl.signal, body: JSON.stringify({ token: S.cfg.token, action: 'analyze', image: photoB64, note }) }).then(x => x.json()).finally(() => clearTimeout(tm));
     if (!r.ok) {
-      $('anaOut').innerHTML = '<p class="mute">' + (r.error === 'nokey' ? 'L’analyse photo n’est pas encore activée : il manque la clé Gemini dans le script du Google Sheet.' : r.error === 'quota' ? 'Limite gratuite atteinte pour le moment. Réessaie dans une minute, ou passe par l’onglet Manuel.' : 'L’analyse a échoué (' + esc(r.error) + '). Réessaie ou passe par l’onglet Manuel.') + '</p>';
+      $('anaOut').innerHTML = '<p class="mute">' + (r.error === 'nokey' ? 'L’analyse photo n’est pas encore activée : il manque la clé Gemini dans le script du Google Sheet.' : /gemini 5|gemini lent/.test(r.error) ? 'Gemini est saturé ou trop lent en ce moment. Réessaie dans quelques minutes, ou passe par Aliments ou Manuel.' : r.error === 'limite_jour' ? 'Limite de sécurité du jour atteinte (80 analyses). Ça repart demain.' : r.error === 'quota' ? 'Limite gratuite atteinte pour le moment. Réessaie dans une minute, ou passe par l’onglet Manuel.' : 'L’analyse a échoué (' + esc(r.error) + '). Réessaie ou passe par l’onglet Manuel.') + '</p>';
       return;
     }
     const v = r.result || {};
