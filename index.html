@@ -480,11 +480,13 @@ async function sync() {
     } else {
       r = await fetch(S.cfg.url + '?token=' + encodeURIComponent(S.cfg.token) + '&t=' + Date.now()).then(x => x.json());
     }
+    sync.ok = !!r.ok;
     if (r.ok) { setData(r.data); $('status').textContent = ''; }
     else $('status').textContent = r.error === 'cle' ? 'Code de connexion refusé : vérifie-le dans Réglages.' : 'Erreur du Google Sheet : ' + r.error;
   } catch (e) {
+    sync.ok = false;
     $('status').textContent = navigator.onLine ? 'Synchronisation impossible pour l’instant. Tes saisies sont gardées et partiront plus tard.' : 'Hors connexion : tes saisies partiront au retour du réseau.';
-  } finally { S.syncing = false; renderSync(); if (S.outbox.length && navigator.onLine && !sync.retry) { sync.retry = setTimeout(() => { sync.retry = null; sync(); }, 15000); } }
+  } finally { S.syncing = false; renderSync(); if (S.outbox.length && navigator.onLine && !sync.retry) { sync.retry = setTimeout(() => { sync.retry = null; sync(); }, sync.ok ? 300 : 15000); } }
 }
 function renderSync() {
   const n = S.outbox.length;
@@ -538,8 +540,22 @@ function renderToday() {
     };
   }
   const meals = day.meals || [];
-  $('mealList').innerHTML = meals.length ? meals.map(m => '<div class="meal"><div>' + esc(m.name) + '<small>' + esc(m.at || '') + ' · P ' + fr(m.p) + ' · G ' + fr(m.c) + ' · L ' + fr(m.f) + (m.src === 'claude' ? ' · ajouté par Claude' : m.src === 'photo' ? ' · photo' : m.src === 'recette' ? ' · recette Jow' : '') + '</small></div><div class="k">' + fr(m.kcal) + ' kcal<br><button class="x" data-del="' + esc(m.id) + '">supprimer</button></div></div>').join('')
+  const editForm = m => '<div class="meal" style="display:block"><label>Nom</label><input data-ef="name" value="' + esc(m.name) + '"><div class="grid4" style="margin-top:6px">' +
+    [['kcal', 'Kcal'], ['p', 'Prot.'], ['c', 'Gluc.'], ['f', 'Lip.']].map(([k, l]) => '<div><label>' + l + '</label><input data-ef="' + k + '" type="number" inputmode="decimal" value="' + (+m[k] || 0) + '"></div>').join('') +
+    '</div><div class="btns" style="margin-top:8px"><button data-esave="' + esc(m.id) + '">Enregistrer</button><button class="ghost" data-ecancel="1">Annuler</button></div></div>';
+  $('mealList').innerHTML = meals.length ? meals.map(m => m.id === renderToday.editing ? editForm(m) : '<div class="meal"><div>' + esc(m.name) + '<small>' + esc(m.at || '') + ' · P ' + fr(m.p) + ' · G ' + fr(m.c) + ' · L ' + fr(m.f) + (m.src === 'claude' ? ' · ajouté par Claude' : m.src === 'photo' ? ' · photo' : m.src === 'recette' ? ' · recette Jow' : '') + '</small></div><div class="k">' + fr(m.kcal) + ' kcal<br><button class="x" data-edit="' + esc(m.id) + '">modifier</button> <button class="x" data-del="' + esc(m.id) + '">supprimer</button></div></div>').join('')
     : '<p class="mute">Rien pour l’instant. Ajoute ton repas, ou envoie une photo à Claude.</p>';
+  for (const b of $('mealList').querySelectorAll('[data-edit]')) b.onclick = () => { renderToday.edit = renderToday.edit; renderToday.editing = b.dataset.edit; renderToday(); };
+  for (const b of $('mealList').querySelectorAll('[data-ecancel]')) b.onclick = () => { renderToday.editing = null; renderToday(); };
+  for (const b of $('mealList').querySelectorAll('[data-esave]')) b.onclick = () => {
+    const m = meals.find(x => x.id === b.dataset.esave); if (!m) return;
+    const v = k => $('mealList').querySelector('[data-ef="' + k + '"]').value;
+    const num = k => Math.max(0, Math.round(parseFloat(String(v(k)).replace(',', '.')) || 0));
+    const upd = { ...m, date: t, name: v('name').trim() || m.name, kcal: num('kcal'), p: num('p'), c: num('c'), f: num('f') };
+    renderToday.editing = null;
+    push({ action: 'delMeal', id: m.id }); push({ action: 'addMeal', meal: upd });
+    toast('Repas modifié');
+  };
   for (const b of $('mealList').querySelectorAll('[data-del]')) b.onclick = () => {
     const m = meals.find(x => x.id === b.dataset.del); if (!m) return;
     push({ action: 'delMeal', id: m.id }); lastRemoved = { ...m, date: t };
