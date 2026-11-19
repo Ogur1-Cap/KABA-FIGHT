@@ -78,7 +78,7 @@ function apply(op) {
     ss.getSheetByName('Ajustements').appendRow(["'" + a.date, a.oldTrain, a.oldRest, a.train, a.rest, a.tdee, a.source || '']);
   } else if (op.action === 'setRecipe') {
     const r = op.recipe, sh = recSheet(), row = findRow(sh, 1, r.id);
-    const vals = [r.id, r.name || '', r.url || '', +r.portions || 2, +r.parts || 2, +r.kcal || 0, +r.p || 0, +r.c || 0, +r.f || 0, r.ingredients || '', "'" + (r.added || '')];
+    const vals = [r.id, r.name || '', r.url || '', +r.portions || 2, +r.parts || 2, +r.kcal || 0, +r.p || 0, +r.c || 0, +r.f || 0, r.ingredients || '', "'" + (r.added || ''), +r.eaten || 0, r.status || 'en cours'];
     if (row) sh.getRange(row, 1, 1, vals.length).setValues([vals]); else sh.appendRow(vals);
   } else if (op.action === 'delRecipe') {
     const sh = recSheet(), row = findRow(sh, 1, op.id); if (row) sh.deleteRow(row);
@@ -107,7 +107,7 @@ function readAll() {
     days[k].meals.push({ id: String(id), at: String(at), name: String(name), kcal: +kcal || 0, p: +p || 0, c: +c || 0, f: +f || 0, src: String(src) });
   }
   const adj = rows(ss.getSheetByName('Ajustements')).filter(r => r[0]).map(r => ({ date: day(r[0]), oldTrain: r[1], oldRest: r[2], train: r[3], rest: r[4], tdee: r[5], source: r[6] }));
-  const recipes = rows(recSheet()).filter(r => r[0]).map(r => ({ id: String(r[0]), name: String(r[1]), url: String(r[2]), portions: +r[3] || 2, parts: +r[4] || 2, kcal: +r[5] || 0, p: +r[6] || 0, c: +r[7] || 0, f: +r[8] || 0, ingredients: String(r[9]), added: day(r[10]) }));
+  const recipes = rows(recSheet()).filter(r => r[0]).map(r => ({ id: String(r[0]), name: String(r[1]), url: String(r[2]), portions: +r[3] || 2, parts: +r[4] || 2, kcal: +r[5] || 0, p: +r[6] || 0, c: +r[7] || 0, f: +r[8] || 0, ingredients: String(r[9]), added: day(r[10]), eaten: +r[11] || 0, status: String(r[12] || 'en cours') }));
   return { profile, days, adj, recipes, at: new Date().toISOString() };
 }
 
@@ -133,8 +133,10 @@ function recSheet() {
   let sh = ss.getSheetByName('Recettes');
   if (!sh) {
     sh = ss.insertSheet('Recettes');
-    sh.appendRow(['ID', 'Recette', 'Lien', 'Portions Jow', 'Parts', 'Kcal par portion', 'Protéines par portion (g)', 'Glucides par portion (g)', 'Lipides par portion (g)', 'Ingrédients', 'Ajoutée le']);
-    sh.setFrozenRows(1); sh.getRange(1, 1, 1, 11).setFontWeight('bold');
+    sh.appendRow(['ID', 'Recette', 'Lien', 'Portions Jow', 'Parts', 'Kcal par portion', 'Protéines par portion (g)', 'Glucides par portion (g)', 'Lipides par portion (g)', 'Ingrédients', 'Ajoutée le', 'Parts mangées', 'Statut']);
+    sh.setFrozenRows(1); sh.getRange(1, 1, 1, 13).setFontWeight('bold');
+  } else if (sh.getRange(1, 12).getValue() === '') {
+    sh.getRange(1, 12, 1, 2).setValues([['Parts mangées', 'Statut']]).setFontWeight('bold');
   }
   return sh;
 }

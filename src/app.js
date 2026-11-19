@@ -245,7 +245,7 @@ $('copyCtx').onclick = async () => { try { await navigator.clipboard.writeText(c
 
 /* ---------- ajout de repas ---------- */
 let basket = [];
-function openSheet() { $('sheet').classList.add('on'); setMode('aliments'); basket = []; $('foodQ').value = ''; renderFoods(); renderBasket(); }
+function openSheet() { $('mealDay').innerHTML = dayOptions(today()); $('sheet').classList.add('on'); setMode('aliments'); basket = []; $('foodQ').value = ''; renderFoods(); renderBasket(); }
 function closeSheet() { $('sheet').classList.remove('on'); }
 function setMode(m) {
   for (const b of $('shTabs').querySelectorAll('button')) b.classList.toggle('on', b.dataset.m === m);
@@ -286,9 +286,10 @@ $('manSave').onclick = () => {
   addMeal({ name, kcal: k, p: +$('manP').value || 0, c: +$('manC').value || 0, f: +$('manF').value || 0, src: 'appli' });
   for (const id of ['manName', 'manK', 'manP', 'manC', 'manF']) $(id).value = '';
 };
-function addMeal(m) {
-  const meal = { id: 'm' + Date.now(), date: today(), at: nowHM(), ...m };
-  push({ action: 'addMeal', meal }); closeSheet(); toast(meal.name + ' : ' + fr(meal.kcal) + ' kcal ajoutées');
+function addMeal(m, date) {
+  const d = date || ($('mealDay') && $('sheet').classList.contains('on') ? $('mealDay').value : today());
+  const meal = { id: 'm' + Date.now() + Math.floor(Math.random() * 100), date: d, at: d === today() ? nowHM() : '', ...m };
+  push({ action: 'addMeal', meal }); closeSheet(); toast(meal.name + ' : ' + fr(meal.kcal) + ' kcal ajoutées ' + dayLabel(d));
 }
 
 /* ---------- analyse photo (Gemini via le Google Sheet) ---------- */
@@ -346,6 +347,14 @@ function renderDraft() {
   };
 }
 
+/* ---------- choix du jour d'un repas ---------- */
+function dayOptions(sel) {
+  const t = today(); let h = '';
+  for (let i = 0; i < 8; i++) { const d = addDays(t, -i); h += '<option value="' + d + '"' + (d === sel ? ' selected' : '') + '>' + (i === 0 ? 'Aujourd’hui' : i === 1 ? 'Hier' : i === 2 ? 'Avant-hier' : fdate(d)) + '</option>'; }
+  return h;
+}
+const dayLabel = d => d === today() ? 'aujourd’hui' : d === addDays(today(), -1) ? 'hier' : 'le ' + fdate(d);
+
 /* ---------- contrôle de ce que renvoie Gemini ---------- */
 // Vérifie que les calories collent aux macros (4 kcal/g prot. et gluc., 9 kcal/g lip.) et repère les valeurs extrêmes
 function doubt(x, kind) {
@@ -359,26 +368,45 @@ const warnHtml = w => w.length ? '<p style="margin:6px 0;color:var(--glove);font
 
 /* ---------- recettes Jow ---------- */
 const partOf = r => { const k = (r.portions || 2) / (r.parts || 2); return { kcal: Math.round(r.kcal * k), p: Math.round(r.p * k), c: Math.round(r.c * k), f: Math.round(r.f * k) }; };
-function renderRecettes() {
-  const list = S.recipes.slice().sort((a, b) => (b.added || '').localeCompare(a.added || ''));
-  $('recList').innerHTML = list.length ? list.map(r => { const x = partOf(r); return '<div class="rec"><h3>' + esc(r.name) + '</h3>' +
-    warnHtml(doubt({ kcal: r.kcal, p: r.p, c: r.c, f: r.f }, 'portion')) + '<div class="mute">1 part = <b style="color:var(--mat)">' + fr(x.kcal) + ' kcal</b> · P ' + fr(x.p) + ' g · G ' + fr(x.c) + ' g · L ' + fr(x.f) + ' g <span>(' + r.portions + ' portion' + (r.portions > 1 ? 's' : '') + ' Jow en ' + r.parts + ' parts)</span></div>' +
+const left = r => Math.max(0, (r.parts || 2) - (r.eaten || 0));
+const isArch = r => r.status === 'archivée';
+function recCard(r) {
+  const x = partOf(r), id = esc(r.id);
+  if (isArch(r)) return '<div class="rec"><h3 style="color:var(--mute)">' + esc(r.name) + '</h3><div class="mute">' + (r.eaten || 0) + '/' + r.parts + ' parts notées · ' + fr(x.kcal) + ' kcal la part</div><div class="row"><button class="ghost" data-restore="' + id + '">Remettre en cours</button><button class="x" data-delrec="' + id + '">supprimer</button></div></div>';
+  return '<div class="rec"><h3>' + esc(r.name) + '</h3>' + warnHtml(doubt({ kcal: r.kcal, p: r.p, c: r.c, f: r.f }, 'portion')) +
+    '<div class="mute">1 part = <b style="color:var(--mat)">' + fr(x.kcal) + ' kcal</b> · P ' + fr(x.p) + ' g · G ' + fr(x.c) + ' g · L ' + fr(x.f) + ' g</div>' +
+    '<div class="mute" style="margin-top:2px">' + r.portions + ' portion' + (r.portions > 1 ? 's' : '') + ' Jow en ' + r.parts + ' parts · <b style="color:var(--ink)">' + left(r) + ' restante' + (left(r) > 1 ? 's' : '') + '</b></div>' +
     (suggestParts(r) !== r.parts ? '<div class="mute" style="font-size:13px">Conseillé pour tes objectifs : ' + suggestParts(r) + ' parts</div>' : '') +
-    '<div class="row"><select data-parts="' + esc(r.id) + '" aria-label="Nombre de parts">' + [1, 2, 3, 4, 5, 6].map(n => '<option value="' + n + '"' + (n === r.parts ? ' selected' : '') + '>' + n + (n > 1 ? ' parts' : ' part') + '</option>').join('') + '</select>' +
-    '<button data-eat="' + esc(r.id) + '">J’en mange 1 part</button></div>' +
-    '<details><summary>Ingrédients et lien</summary><p>' + esc(r.ingredients) + '</p>' + (r.url ? '<a href="' + esc(r.url) + '" target="_blank" rel="noopener" style="color:var(--mat)">Ouvrir dans Jow</a> · ' : '') + '<button class="x" data-delrec="' + esc(r.id) + '">supprimer la recette</button></details></div>'; }).join('')
-    : '<p class="mute">Aucune recette pour l’instant. Importe ta première recette Jow ci-dessus.</p>';
-  for (const s of $('recList').querySelectorAll('[data-parts]')) s.onchange = () => { const r = S.recipes.find(x => x.id === s.dataset.parts); if (r) push({ action: 'setRecipe', recipe: { ...r, parts: +s.value } }); };
-  for (const b of $('recList').querySelectorAll('[data-eat]')) b.onclick = () => { const r = S.recipes.find(x => x.id === b.dataset.eat); if (!r) return; const x = partOf(r); addMeal({ name: r.name + ' (1/' + r.parts + ')', ...x, src: 'recette' }); };
+    '<div class="row"><select data-day="' + id + '" aria-label="Jour du repas">' + dayOptions(today()) + '</select><button data-eat="' + id + '">J’en mange 1 part</button></div>' +
+    '<div class="row"><select data-parts="' + id + '" aria-label="Nombre de parts">' + [1, 2, 3, 4, 5, 6].map(n => '<option value="' + n + '"' + (n === r.parts ? ' selected' : '') + '>' + n + (n > 1 ? ' parts' : ' part') + '</option>').join('') + '</select>' +
+    '<button class="ghost" data-done="' + id + '">Déjà mangée, terminer</button></div>' +
+    '<details><summary>Ingrédients et lien</summary><p>' + esc(r.ingredients) + '</p>' + (r.url ? '<a href="' + esc(r.url) + '" target="_blank" rel="noopener" style="color:var(--mat)">Ouvrir dans Jow</a> · ' : '') + '<button class="x" data-delrec="' + id + '">supprimer la recette</button></details></div>';
+}
+function renderRecettes() {
+  const sorted = S.recipes.slice().sort((a, b) => (b.added || '').localeCompare(a.added || ''));
+  const act = sorted.filter(r => !isArch(r)), arch = sorted.filter(isArch);
+  $('recList').innerHTML = (act.length ? act.map(recCard).join('') : '<p class="mute">Aucune recette en cours. Importe tes recettes Jow ci-dessus.</p>') +
+    (arch.length ? '<details style="margin-top:12px"><summary class="mute">Recettes terminées (' + arch.length + ')</summary>' + arch.map(recCard).join('') + '</details>' : '');
+  const find = id => S.recipes.find(x => x.id === id);
+  for (const s of $('recList').querySelectorAll('[data-parts]')) s.onchange = () => { const r = find(s.dataset.parts); if (r) push({ action: 'setRecipe', recipe: { ...r, parts: +s.value } }); };
+  for (const b of $('recList').querySelectorAll('[data-eat]')) b.onclick = () => {
+    const r = find(b.dataset.eat); if (!r) return;
+    const day = $('recList').querySelector('[data-day="' + CSS.escape(r.id) + '"]').value, x = partOf(r);
+    addMeal({ name: r.name + ' (1/' + r.parts + ')', ...x, src: 'recette' }, day);
+    const eaten = (r.eaten || 0) + 1, done = eaten >= r.parts;
+    push({ action: 'setRecipe', recipe: { ...r, eaten, status: done ? 'archivée' : 'en cours' } });
+    if (done) setTimeout(() => toast('Dernière part : ' + r.name + ' est terminée et archivée'), 2700);
+  };
+  for (const b of $('recList').querySelectorAll('[data-done]')) b.onclick = () => { const r = find(b.dataset.done); if (r) { push({ action: 'setRecipe', recipe: { ...r, status: 'archivée' } }); toast(r.name + ' archivée, sans rien compter'); } };
+  for (const b of $('recList').querySelectorAll('[data-restore]')) b.onclick = () => { const r = find(b.dataset.restore); if (r) push({ action: 'setRecipe', recipe: { ...r, status: 'en cours', eaten: Math.min(r.eaten || 0, r.parts - 1) } }); };
   for (const b of $('recList').querySelectorAll('[data-delrec]')) b.onclick = () => { push({ action: 'delRecipe', id: b.dataset.delrec }); toast('Recette supprimée'); };
 }
-// Part conseillée : déjeuner et dîner = environ 80 % des calories du jour, soit 40 % chacun
 function mealTarget() { const p = S.p; return Math.round(((p.kcalTrain * (p.trainingDays || []).length + p.kcalRest * (7 - (p.trainingDays || []).length)) / 7) * 0.4); }
 function suggestParts(r) { const total = r.kcal * (r.portions || 2); return clamp(Math.ceil(total / mealTarget() - 0.05), 1, 6); }
 const jowLinks = txt => [...new Set((String(txt).match(/https?:\/\/[^\s"'<>]*jow\.(com|fr)\/[^\s"'<>]+/gi) || []))];
 function makeRec(v, url, portions, parts) {
   const pp = v.parPortion || {};
-  const rec = { id: 'r' + Date.now() + Math.floor(Math.random() * 1000), name: String(v.nom || 'Recette Jow'), url, portions, parts: 2, kcal: Math.round(+pp.kcal || 0), p: Math.round(+pp.proteines || 0), c: Math.round(+pp.glucides || 0), f: Math.round(+pp.lipides || 0), ingredients: (v.ingredients || []).join(', '), added: today() };
+  const rec = { id: 'r' + Date.now() + Math.floor(Math.random() * 1000), name: String(v.nom || 'Recette Jow'), url, portions, parts: 2, eaten: 0, status: 'en cours', kcal: Math.round(+pp.kcal || 0), p: Math.round(+pp.proteines || 0), c: Math.round(+pp.glucides || 0), f: Math.round(+pp.lipides || 0), ingredients: (v.ingredients || []).join(', '), added: today() };
   rec.parts = parts || suggestParts(rec);
   return rec;
 }
