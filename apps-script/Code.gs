@@ -9,7 +9,7 @@ const TOKEN = 'A_REMPLACER';
 const TZ = 'Europe/Paris';
 // Analyse des repas en photo : clé API Gemini gratuite (aistudio.google.com > Get API key). Ne la publie pas.
 const GEMINI_KEY = 'A_REMPLACER';
-const GEMINI_MODELS = ['gemini-flash-latest', 'gemini-2.5-flash'];
+const GEMINI_MODELS = ['gemini-flash-latest', 'gemini-flash-lite-latest']; // complétés automatiquement par la liste des modèles disponibles
 const GEMINI_MAX_PAR_JOUR = 80; // garde-fou : au-delà, les analyses sont refusées jusqu'au lendemain
 
 function doGet(e) {
@@ -208,22 +208,45 @@ function gemini(parts) {
   if (used >= GEMINI_MAX_PAR_JOUR) throw new Error('limite_jour');
   props.setProperty(k, String(used + 1));
   const body = { contents: [{ parts }], generationConfig: { responseMimeType: 'application/json', temperature: 0.2 } };
-  let last = '';
-  for (const m of GEMINI_MODELS) {
-    const r = UrlFetchApp.fetch('https://generativelanguage.googleapis.com/v1beta/models/' + m + ':generateContent?key=' + GEMINI_KEY,
-      { method: 'post', contentType: 'application/json', payload: JSON.stringify(body), muteHttpExceptions: true });
-    const code = r.getResponseCode();
-    if (code === 200) {
-      const j = JSON.parse(r.getContentText());
-      LAST_TOKENS = (j.usageMetadata && j.usageMetadata.totalTokenCount) || 0;
-      const txt = j.candidates[0].content.parts.map(x => x.text || '').join('');
-      return JSON.parse(txt.replace(/^```(json)?|```$/g, '').trim());
+  let last = '', saturated = false;
+  for (const m of geminiModels()) {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const r = UrlFetchApp.fetch('https://generativelanguage.googleapis.com/v1beta/models/' + m + ':generateContent?key=' + GEMINI_KEY,
+        { method: 'post', contentType: 'application/json', payload: JSON.stringify(body), muteHttpExceptions: true });
+      const code = r.getResponseCode();
+      if (code === 200) {
+        const j = JSON.parse(r.getContentText());
+        LAST_TOKENS = (j.usageMetadata && j.usageMetadata.totalTokenCount) || 0;
+        const txt = j.candidates[0].content.parts.map(x => x.text || '').join('');
+        return JSON.parse(txt.replace(/^```(json)?|```$/g, '').trim());
+      }
+      if (code === 429) throw new Error('quota');
+      if (code === 503 || code === 500) { saturated = true; last = 'gemini ' + code; Utilities.sleep(2500); continue; } // saturé : on réessaie, puis modèle suivant
+      last = 'gemini ' + code + ' (' + m + ')';
+      break; // 404 ou autre : modèle suivant
     }
-    last = code === 429 ? 'quota' : 'gemini ' + code;
-    if (code === 503 || code === 500) { Utilities.sleep(3000); continue; } // modèle saturé : on essaie le suivant
-    if (code !== 404) break;
   }
-  throw new Error(last);
+  throw new Error(saturated ? 'gemini 503' : last);
+}
+
+// Liste des modèles Flash disponibles pour ta clé, mise en cache 24 h (Google retire régulièrement d'anciens modèles)
+function geminiModels() {
+  const cache = CacheService.getScriptCache(), hit = cache.get('gemini_models');
+  if (hit) return JSON.parse(hit);
+  let names = GEMINI_MODELS.slice();
+  try {
+    const r = UrlFetchApp.fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=200&key=' + GEMINI_KEY, { muteHttpExceptions: true });
+    if (r.getResponseCode() === 200) {
+      const found = (JSON.parse(r.getContentText()).models || [])
+        .filter(x => (x.supportedGenerationMethods || []).indexOf('generateContent') >= 0)
+        .map(x => x.name.replace('models/', ''))
+        .filter(n => /flash/.test(n) && !/image|tts|audio|live|embedding|thinking|exp/.test(n))
+        .sort((a, b) => (/preview/.test(a) - /preview/.test(b)) || b.localeCompare(a, 'en', { numeric: true }));
+      names = names.concat(found.filter(n => names.indexOf(n) < 0)).slice(0, 6);
+    }
+  } catch (e) {}
+  cache.put('gemini_models', JSON.stringify(names), 86400);
+  return names;
 }
 
 // Résumé court pour un widget Android (KWGT, etc.)

@@ -191,13 +191,19 @@ nav a{font-size:11px}
     </div>
     <div id="mRecents" hidden><div class="foods" id="recentList"></div></div>
     <div id="mManuel" hidden>
-      <label for="manName">Nom</label><input id="manName" placeholder="Ex. : Kebab sans frites">
+      <label for="manName">Nom</label><input id="manName" placeholder="Ex. : Skyr nature, Kebab sans frites">
+      <div class="tabs" style="grid-template-columns:repeat(2,minmax(0,1fr));margin:10px 0 6px" id="manMode">
+        <button type="button" data-mm="total" class="on">Pour ce que j'ai mangé</button><button type="button" data-mm="100">Pour 100 g</button>
+      </div>
+      <div id="manQtyBox" hidden><label for="manQty">Quantité mangée (g)</label><input id="manQty" type="number" inputmode="numeric" placeholder="Ex. 150"></div>
+      <p class="mute" id="manHint" style="margin:4px 0 0;font-size:13px">Recopie les valeurs de ta portion.</p>
       <div class="grid4" style="margin-top:8px">
         <div><label for="manK">Kcal</label><input id="manK" type="number" inputmode="numeric"></div>
         <div><label for="manP">Prot.</label><input id="manP" type="number" inputmode="numeric"></div>
         <div><label for="manC">Gluc.</label><input id="manC" type="number" inputmode="numeric"></div>
         <div><label for="manF">Lip.</label><input id="manF" type="number" inputmode="numeric"></div>
       </div>
+      <p id="manCalc" style="margin:10px 0 0"></p>
       <div class="btns" style="margin-top:12px"><button id="manSave">Enregistrer</button></div>
     </div>
     <div id="mPhoto" hidden>

@@ -283,11 +283,26 @@ function renderRecents() {
   $('recentList').innerHTML = list.length ? list.map((m, i) => '<button class="food" data-r="' + i + '"><span>' + esc(m.name) + '</span><small>' + fr(m.kcal) + ' kcal</small></button>').join('') : '<p class="mute">Tes repas déjà notés apparaîtront ici pour les ajouter en un geste.</p>';
   for (const b of $('recentList').querySelectorAll('[data-r]')) b.onclick = () => { const m = list[+b.dataset.r]; addMeal({ name: m.name, kcal: m.kcal, p: m.p, c: m.c, f: m.f, src: 'appli' }); };
 }
+let manMode = 'total';
+function manValues() {
+  const q = +$('manQty').value || 0, k = manMode === '100' ? q / 100 : 1;
+  return { kcal: Math.round((+$('manK').value || 0) * k), p: Math.round((+$('manP').value || 0) * k), c: Math.round((+$('manC').value || 0) * k), f: Math.round((+$('manF').value || 0) * k), q };
+}
+function renderMan() {
+  for (const b of $('manMode').querySelectorAll('button')) b.classList.toggle('on', b.dataset.mm === manMode);
+  $('manQtyBox').hidden = manMode !== '100';
+  $('manHint').textContent = manMode === '100' ? 'Recopie les valeurs « pour 100 g » de l\u2019étiquette, puis la quantité mangée.' : 'Recopie les valeurs de ta portion.';
+  const v = manValues();
+  $('manCalc').innerHTML = manMode === '100' && v.q && +$('manK').value ? 'Pour ' + fr(v.q) + ' g : <b>' + fr(v.kcal) + ' kcal</b> · P ' + fr(v.p) + ' g · G ' + fr(v.c) + ' g · L ' + fr(v.f) + ' g' : '';
+}
+for (const b of $('manMode').querySelectorAll('button')) b.onclick = () => { manMode = b.dataset.mm; renderMan(); };
+for (const id of ['manQty', 'manK', 'manP', 'manC', 'manF']) $(id).oninput = renderMan;
 $('manSave').onclick = () => {
-  const name = $('manName').value.trim() || 'Repas', k = +$('manK').value || 0;
-  if (!k) { toast('Indique au moins les calories'); return; }
-  addMeal({ name, kcal: k, p: +$('manP').value || 0, c: +$('manC').value || 0, f: +$('manF').value || 0, src: 'appli' });
-  for (const id of ['manName', 'manK', 'manP', 'manC', 'manF']) $(id).value = '';
+  const name = $('manName').value.trim() || 'Repas', v = manValues();
+  if (!v.kcal) { toast(manMode === '100' && !v.q ? 'Indique la quantité mangée' : 'Indique au moins les calories'); return; }
+  addMeal({ name: manMode === '100' ? name + ' (' + fr(v.q) + ' g)' : name, kcal: v.kcal, p: v.p, c: v.c, f: v.f, src: 'appli' });
+  for (const id of ['manName', 'manQty', 'manK', 'manP', 'manC', 'manF']) $(id).value = '';
+  renderMan();
 };
 function addMeal(m, date) {
   const d = date || ($('mealDay') && $('sheet').classList.contains('on') ? $('mealDay').value : today());
