@@ -375,7 +375,7 @@ const left = r => Math.max(0, (r.parts || 2) - (r.eaten || 0));
 const isArch = r => r.status === 'archivée';
 function recCard(r) {
   const x = partOf(r), id = esc(r.id);
-  if (isArch(r)) return '<div class="rec"><h3 style="color:var(--mute)">' + esc(r.name) + '</h3><div class="mute">' + (r.eaten || 0) + '/' + r.parts + ' parts notées · ' + fr(x.kcal) + ' kcal la part</div><div class="row"><button class="ghost" data-restore="' + id + '">Remettre en cours</button><button class="x" data-delrec="' + id + '">supprimer</button></div></div>';
+  if (isArch(r)) return '<div class="rec"><h3 style="color:var(--mute)">' + esc(r.name) + '</h3><div class="mute">' + (r.eaten || 0) + '/' + r.parts + ' parts notées · ' + fr(x.kcal) + ' kcal la part</div><div class="row"><button class="ghost" data-restore="' + id + '">Remettre en cours</button>' + ((r.eaten || 0) > 0 ? '<button class="ghost" data-undo="' + id + '">↩ Annuler la dernière part</button>' : '') + '<button class="x" data-delrec="' + id + '">supprimer</button></div></div>';
   return '<div class="rec"><h3>' + esc(r.name) + '</h3>' + warnHtml(doubt({ kcal: r.kcal, p: r.p, c: r.c, f: r.f }, 'portion')) +
     '<div class="mute">1 part = <b style="color:var(--mat)">' + fr(x.kcal) + ' kcal</b> · P ' + fr(x.p) + ' g · G ' + fr(x.c) + ' g · L ' + fr(x.f) + ' g</div>' +
     '<div class="mute" style="margin-top:2px">' + r.portions + ' portion' + (r.portions > 1 ? 's' : '') + ' Jow en ' + r.parts + ' parts · <b style="color:var(--ink)">' + left(r) + ' restante' + (left(r) > 1 ? 's' : '') + '</b></div>' +
@@ -383,6 +383,7 @@ function recCard(r) {
     '<div class="row"><select data-day="' + id + '" aria-label="Jour du repas">' + dayOptions(today()) + '</select><button data-eat="' + id + '">J’en mange 1 part</button></div>' +
     '<div class="row"><select data-parts="' + id + '" aria-label="Nombre de parts">' + [1, 2, 3, 4, 5, 6].map(n => '<option value="' + n + '"' + (n === r.parts ? ' selected' : '') + '>' + n + (n > 1 ? ' parts' : ' part') + '</option>').join('') + '</select>' +
     '<button class="ghost" data-done="' + id + '">Déjà mangée, terminer</button></div>' +
+    ((r.eaten || 0) > 0 ? '<div class="row"><button class="ghost" data-undo="' + id + '">↩ Annuler la dernière part</button><span class="mute" style="font-size:13px">' + r.eaten + ' part' + (r.eaten > 1 ? 's' : '') + ' notée' + (r.eaten > 1 ? 's' : '') + '</span></div>' : '') +
     '<details><summary>Ingrédients et lien</summary><p>' + esc(r.ingredients) + '</p>' + (r.url ? '<a href="' + esc(r.url) + '" target="_blank" rel="noopener" style="color:var(--mat)">Ouvrir dans Jow</a> · ' : '') + '<button class="x" data-delrec="' + id + '">supprimer la recette</button></details></div>';
 }
 function renderRecettes() {
@@ -403,6 +404,15 @@ function renderRecettes() {
     const eaten = (r.eaten || 0) + 1, done = eaten >= r.parts;
     push({ action: 'setRecipe', recipe: { ...r, eaten, status: done ? 'archivée' : 'en cours' } });
     if (done) setTimeout(() => toast('Dernière part : ' + r.name + ' est terminée et archivée'), 2700);
+  };
+  // Annule la dernière part notée : retire le repas le plus récent de cette recette et remet la part
+  for (const b of $('recList').querySelectorAll('[data-undo]')) b.onclick = () => {
+    const r = find(b.dataset.undo); if (!r || !(r.eaten > 0)) return;
+    let last = null;
+    for (const k of Object.keys(S.days).sort()) for (const m of (S.days[k].meals || [])) if (m.src === 'recette' && m.name.startsWith(r.name + ' (1/') && (!last || m.id > last.id)) last = m;
+    if (last) push({ action: 'delMeal', id: last.id });
+    push({ action: 'setRecipe', recipe: { ...r, eaten: r.eaten - 1, status: 'en cours' } });
+    toast('Part annulée' + (last ? ' : le repas a été retiré' : ''));
   };
   for (const b of $('recList').querySelectorAll('[data-done]')) b.onclick = () => { const r = find(b.dataset.done); if (r) { push({ action: 'setRecipe', recipe: { ...r, status: 'archivée' } }); toast(r.name + ' archivée, sans rien compter'); } };
   for (const b of $('recList').querySelectorAll('[data-restore]')) b.onclick = () => { const r = find(b.dataset.restore); if (r) push({ action: 'setRecipe', recipe: { ...r, status: 'en cours', eaten: Math.min(r.eaten || 0, r.parts - 1) } }); };
