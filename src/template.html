@@ -47,6 +47,11 @@ nav a{font-size:11px}
 .rec select{width:auto;min-width:120px}
 .rec details{font-size:14px;color:var(--mute);margin-top:6px}
 .mic{flex:0 0 auto}
+.plan{display:grid;grid-template-columns:repeat(auto-fill,minmax(88px,1fr));gap:8px}
+.plan button{display:grid;gap:2px;padding:8px 4px;min-height:64px;background:var(--mat2);color:var(--ink);font-size:13px;border:1px solid var(--line)}
+.plan button b{font-size:12px;font-weight:700}
+.plan button.boxe{background:var(--glove);color:#fff;border-color:var(--glove)}
+.plan button.extra{outline:2px dashed var(--mat);outline-offset:-4px}
 .quick{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr);gap:8px;margin-bottom:14px}
 .quick button{min-height:54px;font-size:16px}
 .ring{width:min(200px,52vw)}
@@ -167,6 +172,11 @@ nav a{font-size:11px}
       <div style="margin-top:12px"><label>Jours de boxe</label><div class="btns" id="sDays"></div></div>
       <div class="btns" style="margin-top:14px"><button type="submit">Enregistrer</button></div>
     </form>
+  </div>
+  <div class="card">
+    <h2>Mes séances des 14 prochains jours</h2>
+    <p class="mute" style="margin-top:0">Touche un jour pour ajouter une séance exceptionnelle ou en annuler une. Les objectifs caloriques de ce jour s'adaptent automatiquement.</p>
+    <div id="planDays" class="plan"></div>
   </div>
   <div class="card"><h2>Historique des ajustements</h2><div id="adjList" class="mute"></div></div>
   <div class="card mute">

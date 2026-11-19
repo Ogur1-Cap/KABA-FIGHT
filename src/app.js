@@ -225,6 +225,19 @@ function renderReglages() {
     $('sDays').innerHTML = [1, 2, 3, 4, 5, 6, 0].map(d => '<button type="button" class="' + ((p.trainingDays || []).includes(d) ? '' : 'ghost') + '" data-d="' + d + '" aria-pressed="' + (p.trainingDays || []).includes(d) + '">' + JOURS[d] + '</button>').join('');
     for (const b of $('sDays').querySelectorAll('button')) b.onclick = () => { const on = b.getAttribute('aria-pressed') !== 'true'; b.setAttribute('aria-pressed', on); b.className = on ? '' : 'ghost'; };
   }
+  // Planning : jour de boxe habituel ou exceptionnel (onglet Jours, colonne Type)
+  let ph = '';
+  for (let i = 0; i < 14; i++) {
+    const d = addDays(today(), i), tr = isTrain(p, d, S.days), def = (p.trainingDays || []).includes(parse(d).getDay());
+    const extra = tr !== def;
+    ph += '<button type="button" data-plan="' + d + '" class="' + (tr ? 'boxe' : '') + (extra ? ' extra' : '') + '" aria-pressed="' + tr + '"><span>' + (i === 0 ? 'Auj.' : i === 1 ? 'Demain' : fdate(d)) + '</span><b>' + (tr ? '🥊 Boxe' : 'Repos') + '</b>' + (extra ? '<span style="font-size:11px">' + (tr ? 'exceptionnelle' : 'annulée') + '</span>' : '') + '</button>';
+  }
+  $('planDays').innerHTML = ph;
+  for (const b of $('planDays').querySelectorAll('[data-plan]')) b.onclick = () => {
+    const d = b.dataset.plan, tr = isTrain(S.p, d, S.days);
+    push({ action: 'setType', date: d, type: tr ? 'repos' : 'boxe' });
+    toast((tr ? 'Repos' : 'Séance de boxe') + ' ' + dayLabel(d) + ' : objectif ' + fr(tr ? S.p.kcalRest : S.p.kcalTrain) + ' kcal');
+  };
   $('adjList').innerHTML = S.adj.length ? S.adj.map(a => '<div>' + fdate(a.date) + ' : ' + fr(a.oldTrain) + '/' + fr(a.oldRest) + ' → <b style="color:var(--ink)">' + fr(a.train) + '/' + fr(a.rest) + '</b> kcal (dépense ' + fr(a.tdee) + ')</div>').join('') : 'Aucun ajustement pour l’instant.';
 }
 function renderAll() { renderHeader(); renderToday(); renderCourbe(); renderCoach(); renderRecettes(); renderReglages(); if ($('chatLog')) renderChat(); }
@@ -418,7 +431,7 @@ function dayOptions(sel) {
   for (let i = 0; i < 8; i++) { const d = addDays(t, -i); h += '<option value="' + d + '"' + (d === sel ? ' selected' : '') + '>' + (i === 0 ? 'Aujourd’hui' : i === 1 ? 'Hier' : i === 2 ? 'Avant-hier' : fdate(d)) + '</option>'; }
   return h;
 }
-const dayLabel = d => d === today() ? 'aujourd’hui' : d === addDays(today(), -1) ? 'hier' : 'le ' + fdate(d);
+const dayLabel = d => d === today() ? 'aujourd’hui' : d === addDays(today(), -1) ? 'hier' : d === addDays(today(), 1) ? 'demain' : 'le ' + fdate(d);
 
 /* ---------- contrôle de ce que renvoie Gemini ---------- */
 // Vérifie que les calories collent aux macros (4 kcal/g prot. et gluc., 9 kcal/g lip.) et repère les valeurs extrêmes
