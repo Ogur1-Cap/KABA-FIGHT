@@ -792,6 +792,8 @@ async function importAll(urls) {
     if (queue.length) await new Promise(r => setTimeout(r, 4000));
   }
   $('recBtn').disabled = false; $('recBtn').textContent = 'Importer'; $('recUrl').value = '';
+  if (S.shared && lines.some(l => l.includes('❌'))) { lines.push('<p class="mute" style="margin-top:10px">Texte reçu de Jow :</p><p style="white-space:pre-wrap;font-size:13px">' + esc(S.shared.slice(0, 800)) + '</p>'); show(); }
+  S.shared = null;
   toast('Import terminé');
 }
 $('recForm').onsubmit = e => {
@@ -807,7 +809,7 @@ $('recForm').onsubmit = e => {
   const txt = [q.get('title'), q.get('text'), q.get('url')].filter(Boolean).join('\n');
   history.replaceState(null, '', location.pathname + '#recettes');
   const urls = jowLinks(txt);
-  if (urls.length) { $('recUrl').value = urls.join('\n'); setTimeout(() => importAll(urls), 500); }
+  if (urls.length) { S.shared = txt; $('recUrl').value = urls.join('\n'); setTimeout(() => importAll(urls), 500); }
   else $('recOut').innerHTML = '<p class="mute">Ce partage ne contient pas de lien de recette Jow. Voici ce que l’appli a reçu (envoie une capture à Claude si besoin) :</p><p style="white-space:pre-wrap;font-size:13px">' + esc(txt.slice(0, 600)) + '</p>';
 })();
 
