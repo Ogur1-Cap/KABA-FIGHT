@@ -107,7 +107,7 @@ function renderToday() {
   $('ringL').textContent = rem < 0 ? 'kcal au-dessus' : 'kcal restantes';
   $('ringSub').textContent = fr(tot.kcal) + ' / ' + fr(tg.kcal) + ' kcal';
   const bar = (cls, lab, v, g) => '<div class="bar ' + cls + '"><div class="t"><span>' + lab + '</span><span>' + fr(v) + ' / ' + fr(g) + ' g</span></div><div class="tr"><i style="width:' + Math.round(clamp(v / g, 0, 1) * 100) + '%"></i></div></div>';
-  $('macroBars').innerHTML = bar('p', 'Protéines', tot.p, tg.p) + bar('', 'Glucides', tot.c, tg.c) + bar('', 'Lipides', tot.f, tg.f);
+  $('macroBars').innerHTML = bar('p', 'Protéines', tot.p, tg.p) + bar('', 'Glucides', tot.c, tg.c) + bar('f', 'Lipides', tot.f, tg.f);
   const cur = current(p, S.days, t), plan = planWeight(p, t);
   if (typeof day.weight === 'number' && !renderToday.edit) {
     const gap = cur.est - plan;
@@ -160,7 +160,7 @@ function renderChart() {
   const step = W < 520 ? 7 : 3;
   for (let i = 0; i <= n; i += step) { const d = addDays(p.startDate, i), pd = parse(d); g += '<text x="' + x(d) + '" y="' + (H - 8) + '" text-anchor="middle" font-size="11" fill="var(--mute)">' + pd.getDate() + '/' + (pd.getMonth() + 1) + '</text>'; }
   const planPts = []; for (let i = 0; i <= n; i++) { const d = addDays(p.startDate, i); planPts.push(x(d) + ',' + y(planWeight(p, d))); }
-  g += '<polyline points="' + planPts.join(' ') + '" fill="none" stroke="var(--glove)" stroke-width="2" stroke-dasharray="6 5"/>';
+  g += '<polyline points="' + planPts.join(' ') + '" fill="none" stroke="var(--silver)" stroke-width="2" stroke-dasharray="6 5"/>';
   g += ser.filter(r => r.w != null).map(r => '<circle cx="' + x(r.date) + '" cy="' + y(r.w) + '" r="3.5" fill="var(--mute)"/>').join('');
   const tr = ser.filter(r => r.trend != null).map(r => x(r.date) + ',' + y(r.trend));
   if (tr.length > 1) g += '<polyline points="' + tr.join(' ') + '" fill="none" stroke="var(--mat)" stroke-width="3" stroke-linejoin="round"/>';

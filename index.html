@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#123a8c">
+<meta name="theme-color" content="#0b0b0d">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/icon-192.png">
@@ -95,6 +95,25 @@ label{font-size:13px;color:var(--mute);display:block}
 @media(max-width:420px){.it{grid-template-columns:minmax(0,1fr) 78px 60px 26px}.ring .in b{font-size:44px}}
 </style>
 <style>
+/* Thème KABA Fight : toujours sombre. Noir + jaune or (couleur principale),
+   rouge vif (boxe, alertes, semaine du combat) et argent (éléments secondaires). */
+:root,:root[data-theme=light],:root[data-theme=dark]{color-scheme:dark;
+--bg:#0b0b0d;--ink:#f4f1e6;--mute:#9d998c;--mat:#f5c518;--mat2:#29261a;--glove:#e5484d;
+--card:#16161a;--line:#2c2b31;--ok:#3fd08a;--on:#121212;--silver:#b8bec9}
+header{background:#0b0b0d;color:var(--ink);border-bottom:3px solid var(--mat)}
+header h1{color:var(--mat)}
+.cd b{color:var(--mat)}
+button{color:var(--on)}
+button.ghost{color:var(--ink)}
+button.red{background:var(--glove);color:#fff}
+.tabs button.on{color:var(--on)}
+.bar.f .tr i{background:var(--silver)}
+.ring .in b{color:var(--mat)}
+nav a.on{color:var(--mat)}
+.chip{background:var(--mat2);color:var(--mat)}
+.chip.box{background:var(--glove);color:#fff}
+.food{background:var(--card)}
+input,select,textarea{background:#101013}
 header{padding-top:max(18px,env(safe-area-inset-top))}
 .foods{display:grid;gap:6px;max-height:42vh;overflow:auto;margin-top:8px}
 .food{display:flex;justify-content:space-between;gap:8px;align-items:center;padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:var(--card);cursor:pointer;text-align:left;color:var(--ink);font:500 15px Inter,system-ui,sans-serif;min-height:44px}
@@ -148,7 +167,7 @@ header{padding-top:max(18px,env(safe-area-inset-top))}
     <div class="fig" id="chartBox"><svg id="chart"></svg></div>
     <div class="legend">
       <span><i style="background:var(--mat)"></i>Tendance lissée</span>
-      <span><i style="background:var(--glove);height:2px"></i>Trajectoire visée</span>
+      <span><i style="background:var(--silver);height:2px"></i>Trajectoire visée</span>
       <span><i style="background:var(--mute);height:6px;width:6px;border-radius:50%"></i>Pesées</span>
     </div>
   </div>
@@ -439,7 +458,7 @@ function renderToday() {
   $('ringL').textContent = rem < 0 ? 'kcal au-dessus' : 'kcal restantes';
   $('ringSub').textContent = fr(tot.kcal) + ' / ' + fr(tg.kcal) + ' kcal';
   const bar = (cls, lab, v, g) => '<div class="bar ' + cls + '"><div class="t"><span>' + lab + '</span><span>' + fr(v) + ' / ' + fr(g) + ' g</span></div><div class="tr"><i style="width:' + Math.round(clamp(v / g, 0, 1) * 100) + '%"></i></div></div>';
-  $('macroBars').innerHTML = bar('p', 'Protéines', tot.p, tg.p) + bar('', 'Glucides', tot.c, tg.c) + bar('', 'Lipides', tot.f, tg.f);
+  $('macroBars').innerHTML = bar('p', 'Protéines', tot.p, tg.p) + bar('', 'Glucides', tot.c, tg.c) + bar('f', 'Lipides', tot.f, tg.f);
   const cur = current(p, S.days, t), plan = planWeight(p, t);
   if (typeof day.weight === 'number' && !renderToday.edit) {
     const gap = cur.est - plan;
@@ -492,7 +511,7 @@ function renderChart() {
   const step = W < 520 ? 7 : 3;
   for (let i = 0; i <= n; i += step) { const d = addDays(p.startDate, i), pd = parse(d); g += '<text x="' + x(d) + '" y="' + (H - 8) + '" text-anchor="middle" font-size="11" fill="var(--mute)">' + pd.getDate() + '/' + (pd.getMonth() + 1) + '</text>'; }
   const planPts = []; for (let i = 0; i <= n; i++) { const d = addDays(p.startDate, i); planPts.push(x(d) + ',' + y(planWeight(p, d))); }
-  g += '<polyline points="' + planPts.join(' ') + '" fill="none" stroke="var(--glove)" stroke-width="2" stroke-dasharray="6 5"/>';
+  g += '<polyline points="' + planPts.join(' ') + '" fill="none" stroke="var(--silver)" stroke-width="2" stroke-dasharray="6 5"/>';
   g += ser.filter(r => r.w != null).map(r => '<circle cx="' + x(r.date) + '" cy="' + y(r.w) + '" r="3.5" fill="var(--mute)"/>').join('');
   const tr = ser.filter(r => r.trend != null).map(r => x(r.date) + ',' + y(r.trend));
   if (tr.length > 1) g += '<polyline points="' + tr.join(' ') + '" fill="none" stroke="var(--mat)" stroke-width="3" stroke-linejoin="round"/>';
