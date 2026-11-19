@@ -394,8 +394,16 @@ async function importAll(urls) {
     $('recBtn').textContent = 'Import ' + done + '/' + (done + queue.length) + '…';
     try {
       let res;
-      try { res = await importOne(url, portions, parts); }
-      catch (e) { if (e.message === 'quota') { await new Promise(r => setTimeout(r, 20000)); res = await importOne(url, portions, parts); } else throw e; }
+      // Gemini gratuit peut être saturé (503) ou limité (quota) : on réessaie deux fois en patientant
+      for (let tryN = 0; ; tryN++) {
+        try { res = await importOne(url, portions, parts); break; }
+        catch (e) {
+          if (tryN < 2 && /quota|gemini 5\d\d/.test(e.message)) {
+            lines.push('<p class="mute" style="margin:4px 0">⏳ Gemini est occupé, nouvel essai dans ' + (tryN ? 30 : 15) + ' s…</p>'); show();
+            await new Promise(r => setTimeout(r, tryN ? 30000 : 15000)); lines.pop();
+          } else throw e;
+        }
+      }
       if (res.links) {
         const fresh = res.links.filter(l => !seen.has(l)); fresh.forEach(l => { seen.add(l); queue.push(l); });
         lines.push('<p style="margin:4px 0">📋 Menu Jow : ' + fresh.length + ' recette' + (fresh.length > 1 ? 's' : '') + ' trouvée' + (fresh.length > 1 ? 's' : '') + '</p>');

@@ -200,6 +200,7 @@ function gemini(parts) {
       return JSON.parse(txt.replace(/^```(json)?|```$/g, '').trim());
     }
     last = code === 429 ? 'quota' : 'gemini ' + code;
+    if (code === 503 || code === 500) { Utilities.sleep(3000); continue; } // modèle saturé : on essaie le suivant
     if (code !== 404) break;
   }
   throw new Error(last);
