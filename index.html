@@ -442,7 +442,10 @@ function push(op) {
   applyLocal(op); S.outbox.push(op); LS.set('outbox', S.outbox); saveCache(); renderAll(); sync();
 }
 function setData(data) {
-  S.p = { ...DEFAULT, ...data.profile }; S.days = data.days || {}; S.adj = (data.adj || []).slice().reverse(); S.recipes = data.recipes || [];
+  S.p = { ...DEFAULT, ...data.profile }; S.days = data.days || {}; S.adj = (data.adj || []).slice().reverse();
+  // Si le script Google est ancien, il ne renvoie pas le statut des recettes : on garde celui du téléphone
+  const prev = new Map(S.recipes.map(r => [r.id, r]));
+  S.recipes = (data.recipes || []).map(r => ('status' in r) ? r : { ...r, status: (prev.get(r.id) || {}).status || 'en cours', eaten: (prev.get(r.id) || {}).eaten || 0 });
   for (const op of S.outbox) applyLocal(op);
   S.lastSync = data.at; saveCache(); renderAll();
 }
