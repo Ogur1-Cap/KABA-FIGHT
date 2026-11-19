@@ -223,27 +223,28 @@ function gemini(parts, opt) {
   const used = Number(props.getProperty(k) || 0);
   if (used >= GEMINI_MAX_PAR_JOUR) throw new Error('limite_jour');
   props.setProperty(k, String(used + 1));
-  // Réflexion réduite au minimum : les modèles récents « réfléchissent » longtemps par défaut, inutile ici
-  const cfg = json ? { responseMimeType: 'application/json', temperature: 0.2 } : { temperature: 0.6, maxOutputTokens: 700 };
+  // Pas de « sortie JSON imposée » ni de réglage de réflexion : cette combinaison fait parfois bloquer Gemini
+  // indéfiniment (incidents signalés sur le forum Google). On demande du JSON dans la consigne et on l'extrait du texte.
+  const cfg = json ? { temperature: 0.2, maxOutputTokens: 2500 } : { temperature: 0.6, maxOutputTokens: 700 };
   const base = { contents: opt.contents || [{ parts }] };
   if (opt.system) base.systemInstruction = { parts: [{ text: opt.system }] };
-  const fast = Object.assign({}, base, { generationConfig: Object.assign({}, cfg, { thinkingConfig: { thinkingLevel: 'low' } }) });
-  const plain = Object.assign({}, base, { generationConfig: cfg });
+  const body = Object.assign({}, base, { generationConfig: cfg });
   const t0 = Date.now();
   let last = '', saturated = false;
   for (const m of geminiModels()) {
-    let body = fast;
     for (let attempt = 0; attempt < 2; attempt++) {
       if (Date.now() - t0 > 70000) throw new Error('gemini lent');
       const r = UrlFetchApp.fetch('https://generativelanguage.googleapis.com/v1beta/models/' + m + ':generateContent?key=' + GEMINI_KEY,
         { method: 'post', contentType: 'application/json', payload: JSON.stringify(body), muteHttpExceptions: true });
       const code = r.getResponseCode();
-      if (code === 400 && body === fast) { body = plain; attempt--; continue; } // ce modèle ne connaît pas le réglage de réflexion
       if (code === 200) {
         const j = JSON.parse(r.getContentText());
         LAST_TOKENS = (j.usageMetadata && j.usageMetadata.totalTokenCount) || 0;
         const txt = j.candidates[0].content.parts.map(x => x.text || '').join('');
-        return json ? JSON.parse(txt.replace(/^```(json)?|```$/g, '').trim()) : txt.trim();
+        if (!json) return txt.trim();
+        const a = txt.indexOf('{'), z = txt.lastIndexOf('}');
+        if (a < 0 || z < a) throw new Error('réponse illisible');
+        return JSON.parse(txt.slice(a, z + 1));
       }
       if (code === 429) throw new Error('quota');
       if (code === 503 || code === 500) { saturated = true; last = 'gemini ' + code; Utilities.sleep(2500); continue; } // saturé : on réessaie, puis modèle suivant
