@@ -12,6 +12,8 @@ Idées validées avec raph le 19/11/2026, à reprendre lors des prochaines sessi
 5. **Suivi de l'eau** (compteur de verres).
 
 ## Pour les courses
+**Pense-bête prochain drive (à rappeler à raph) :** lait demi-écrémé pour la whey Impact Vanilla (19/11 : se mélange mal à l'eau, pas de lait à la maison). Protéines à renforcer : il manque ~60 g/jour.
+
 6. **« Ce qu'il me manque »** : à partir des parts restantes des recettes Jow, ce qu'il faut ajouter au prochain drive pour atteindre les protéines.
 7. **Suggestion de recettes Jow** adaptées aux objectifs avant chaque drive.
 
