@@ -166,8 +166,13 @@ header{padding-top:max(18px,env(safe-area-inset-top))}
       <div class="btns" style="margin-top:12px"><button id="manSave">Enregistrer</button></div>
     </div>
     <div id="mPhoto" hidden>
-      <p>Prends ton assiette en photo et envoie-la à Claude, dans ta conversation habituelle. Il estime le repas avec toi et l'ajoute directement à ton Google Sheet. Il apparaît ici à la prochaine synchronisation.</p>
-      <a href="https://claude.ai/new" target="_blank" rel="noopener" style="display:flex"><button style="width:100%">Ouvrir Claude</button></a>
+      <label for="photoIn">Photo de ton assiette</label>
+      <input type="file" id="photoIn" accept="image/*">
+      <img id="photoPrev" class="preview" alt="" hidden>
+      <label for="photoNote" style="margin-top:8px">Précisions ou description (facultatif sans photo)</label>
+      <textarea id="photoNote" placeholder="Ex. : cuit avec 1 c. à soupe d'huile ; ou sans photo : 150 g de riz, un blanc de poulet, des haricots verts"></textarea>
+      <div class="btns" style="margin-top:10px"><button id="anaBtn">Analyser</button></div>
+      <div id="anaOut"></div>
     </div>
   </div>
 </div>

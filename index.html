@@ -249,8 +249,13 @@ header{padding-top:max(18px,env(safe-area-inset-top))}
       <div class="btns" style="margin-top:12px"><button id="manSave">Enregistrer</button></div>
     </div>
     <div id="mPhoto" hidden>
-      <p>Prends ton assiette en photo et envoie-la à Claude, dans ta conversation habituelle. Il estime le repas avec toi et l'ajoute directement à ton Google Sheet. Il apparaît ici à la prochaine synchronisation.</p>
-      <a href="https://claude.ai/new" target="_blank" rel="noopener" style="display:flex"><button style="width:100%">Ouvrir Claude</button></a>
+      <label for="photoIn">Photo de ton assiette</label>
+      <input type="file" id="photoIn" accept="image/*">
+      <img id="photoPrev" class="preview" alt="" hidden>
+      <label for="photoNote" style="margin-top:8px">Précisions ou description (facultatif sans photo)</label>
+      <textarea id="photoNote" placeholder="Ex. : cuit avec 1 c. à soupe d'huile ; ou sans photo : 150 g de riz, un blanc de poulet, des haricots verts"></textarea>
+      <div class="btns" style="margin-top:10px"><button id="anaBtn">Analyser</button></div>
+      <div id="anaOut"></div>
     </div>
   </div>
 </div>
@@ -476,7 +481,7 @@ function renderToday() {
     };
   }
   const meals = day.meals || [];
-  $('mealList').innerHTML = meals.length ? meals.map(m => '<div class="meal"><div>' + esc(m.name) + '<small>' + esc(m.at || '') + ' · P ' + fr(m.p) + ' · G ' + fr(m.c) + ' · L ' + fr(m.f) + (m.src === 'claude' ? ' · ajouté par Claude' : '') + '</small></div><div class="k">' + fr(m.kcal) + ' kcal<br><button class="x" data-del="' + esc(m.id) + '">supprimer</button></div></div>').join('')
+  $('mealList').innerHTML = meals.length ? meals.map(m => '<div class="meal"><div>' + esc(m.name) + '<small>' + esc(m.at || '') + ' · P ' + fr(m.p) + ' · G ' + fr(m.c) + ' · L ' + fr(m.f) + (m.src === 'claude' ? ' · ajouté par Claude' : m.src === 'photo' ? ' · photo' : '') + '</small></div><div class="k">' + fr(m.kcal) + ' kcal<br><button class="x" data-del="' + esc(m.id) + '">supprimer</button></div></div>').join('')
     : '<p class="mute">Rien pour l’instant. Ajoute ton repas, ou envoie une photo à Claude.</p>';
   for (const b of $('mealList').querySelectorAll('[data-del]')) b.onclick = () => {
     const m = meals.find(x => x.id === b.dataset.del); if (!m) return;
@@ -638,6 +643,61 @@ $('manSave').onclick = () => {
 function addMeal(m) {
   const meal = { id: 'm' + Date.now(), date: today(), at: nowHM(), ...m };
   push({ action: 'addMeal', meal }); closeSheet(); toast(meal.name + ' : ' + fr(meal.kcal) + ' kcal ajoutées');
+}
+
+/* ---------- analyse photo (Gemini via le Google Sheet) ---------- */
+let photoB64 = null, draft = null;
+function shrink(file) {
+  return new Promise((res, rej) => {
+    const img = new Image(); img.onload = () => {
+      const k = Math.min(1, 1024 / Math.max(img.width, img.height));
+      const c = document.createElement('canvas'); c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+      c.getContext('2d').drawImage(img, 0, 0, c.width, c.height); res(c.toDataURL('image/jpeg', 0.8));
+    }; img.onerror = rej; img.src = URL.createObjectURL(file);
+  });
+}
+$('photoIn').onchange = async () => {
+  const f = $('photoIn').files[0]; if (!f) return;
+  try { const url = await shrink(f); photoB64 = url.split(',')[1]; $('photoPrev').src = url; $('photoPrev').hidden = false; }
+  catch { toast('Photo illisible, essaie une autre'); }
+};
+$('anaBtn').onclick = async () => {
+  const note = $('photoNote').value.trim();
+  if (!photoB64 && !note) { toast('Prends une photo ou décris ton repas'); return; }
+  if (!S.cfg) { toast('Connecte d’abord ton Google Sheet'); return; }
+  if (!navigator.onLine) { toast('L’analyse demande une connexion'); return; }
+  $('anaBtn').disabled = true; $('anaBtn').textContent = 'Analyse en cours…'; $('anaOut').innerHTML = '';
+  try {
+    const r = await fetch(S.cfg.url, { method: 'POST', body: JSON.stringify({ token: S.cfg.token, action: 'analyze', image: photoB64, note }) }).then(x => x.json());
+    if (!r.ok) {
+      $('anaOut').innerHTML = '<p class="mute">' + (r.error === 'nokey' ? 'L’analyse photo n’est pas encore activée : il manque la clé Gemini dans le script du Google Sheet.' : r.error === 'quota' ? 'Limite gratuite atteinte pour le moment. Réessaie dans une minute, ou passe par l’onglet Manuel.' : 'L’analyse a échoué (' + esc(r.error) + '). Réessaie ou passe par l’onglet Manuel.') + '</p>';
+      return;
+    }
+    const v = r.result || {};
+    const items = (Array.isArray(v.items) ? v.items : []).map(i => ({ aliment: String(i.aliment || '?'), g0: +i.grammes || 0, g: +i.grammes || 0, kcal: +i.kcal || 0, p: +i.proteines || 0, c: +i.glucides || 0, f: +i.lipides || 0 }));
+    if (!items.length) { $('anaOut').innerHTML = '<p class="mute">Je n’ai pas reconnu de repas. Essaie une autre photo ou décris-le.</p>'; return; }
+    draft = { name: String(v.nom || 'Repas'), items, conf: v.confiance || '', q: v.question || '' };
+    renderDraft();
+  } catch { $('anaOut').innerHTML = '<p class="mute">Pas de réponse du Google Sheet. Réessaie dans un moment.</p>'; }
+  finally { $('anaBtn').disabled = false; $('anaBtn').textContent = 'Analyser'; }
+};
+const scaled = i => { const k = i.g0 ? i.g / i.g0 : 1; return { kcal: i.kcal * k, p: i.p * k, c: i.c * k, f: i.f * k }; };
+function draftTot() { const t = { kcal: 0, p: 0, c: 0, f: 0 }; for (const i of draft.items) { const s = scaled(i); t.kcal += s.kcal; t.p += s.p; t.c += s.c; t.f += s.f; } return t; }
+function renderDraft() {
+  const t = draftTot();
+  $('anaOut').innerHTML = '<div class="card" style="margin-top:12px"><label for="dName">Nom du repas</label><input id="dName" value="' + esc(draft.name) + '">' +
+    '<p class="mute" style="margin:10px 0 4px">Vérifie les grammages : c’est ce qui compte le plus. Confiance : ' + esc(draft.conf || '?') + '.</p>' +
+    draft.items.map((i, k) => '<div class="it"><span>' + esc(i.aliment) + '</span><input type="number" inputmode="numeric" data-k="' + k + '" value="' + Math.round(i.g) + '" aria-label="Grammes de ' + esc(i.aliment) + '"><span style="text-align:right">' + fr(scaled(i).kcal) + ' kcal</span><button class="x" data-rm="' + k + '" aria-label="Retirer">✕</button></div>').join('') +
+    '<p style="margin:10px 0"><b>' + fr(t.kcal) + ' kcal</b> · P ' + fr(t.p) + ' g · G ' + fr(t.c) + ' g · L ' + fr(t.f) + ' g</p>' +
+    (draft.q ? '<p class="mute">Question : ' + esc(draft.q) + ' Précise dans le champ ci-dessus et relance si besoin.</p>' : '') +
+    '<div class="btns"><button id="dSave">Enregistrer ce repas</button></div></div>';
+  for (const inp of $('anaOut').querySelectorAll('[data-k]')) inp.onchange = () => { draft.items[+inp.dataset.k].g = Math.max(0, +inp.value || 0); draft.name = $('dName').value; renderDraft(); };
+  for (const b of $('anaOut').querySelectorAll('[data-rm]')) b.onclick = () => { draft.items.splice(+b.dataset.rm, 1); draft.name = $('dName').value; renderDraft(); };
+  $('dSave').onclick = () => {
+    const t2 = draftTot();
+    addMeal({ name: $('dName').value.trim() || draft.name, kcal: Math.round(t2.kcal), p: Math.round(t2.p), c: Math.round(t2.c), f: Math.round(t2.f), src: photoB64 ? 'photo' : 'texte' });
+    photoB64 = null; draft = null; $('photoIn').value = ''; $('photoPrev').hidden = true; $('photoNote').value = ''; $('anaOut').innerHTML = '';
+  };
 }
 
 /* ---------- démarrage ---------- */

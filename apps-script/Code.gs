@@ -7,6 +7,9 @@
  */
 const TOKEN = 'A_REMPLACER';
 const TZ = 'Europe/Paris';
+// Analyse des repas en photo : clé API Gemini gratuite (aistudio.google.com > Get API key). Ne la publie pas.
+const GEMINI_KEY = 'A_REMPLACER';
+const GEMINI_MODELS = ['gemini-flash-latest', 'gemini-2.5-flash'];
 
 function doGet(e) {
   const p = e.parameter || {};
@@ -19,6 +22,7 @@ function doPost(e) {
   let b;
   try { b = JSON.parse(e.postData.contents); } catch (err) { return out({ ok: false, error: 'json' }); }
   if (b.token !== TOKEN) return out({ ok: false, error: 'cle' });
+  if (b.action === 'analyze') { try { return out({ ok: true, result: analyze(b) }); } catch (err) { return out({ ok: false, error: String(err.message || err) }); } }
   const lock = LockService.getScriptLock();
   lock.waitLock(20000);
   try {
@@ -87,6 +91,37 @@ function readAll() {
   return { profile, days, adj, at: new Date().toISOString() };
 }
 
+const PROMPT = `Tu es nutritionniste du sport et tu aides un boxeur de 26 ans en perte de poids avant une compétition.
+Estime le contenu nutritionnel du repas photographié ou décrit.
+Règles :
+- Utilise les valeurs moyennes françaises (table Ciqual de l'ANSES) pour des aliments tels que consommés (cuits si cuits).
+- Les applis photo sous-estiment souvent les calories d'environ un tiers : compte les matières grasses de cuisson, les sauces, le fromage, les boissons. Si une portion est incertaine, prends la plus probable, pas la plus petite.
+- Détaille chaque aliment avec son poids estimé en grammes.
+- Si ce n'est pas un repas, renvoie "items": [].
+Réponds uniquement avec un objet JSON de cette forme :
+{"nom":"nom court du repas","items":[{"aliment":"riz blanc cuit","grammes":150,"kcal":195,"proteines":4,"glucides":42,"lipides":0.5}],"confiance":"faible|moyenne|bonne","question":"une question courte pour préciser l'estimation, ou chaîne vide"}`;
+
+function analyze(b) {
+  if (!GEMINI_KEY || GEMINI_KEY === 'A_REMPLACER') throw new Error('nokey');
+  const parts = [{ text: PROMPT + '\n\nPrécisions de l\'utilisateur : ' + (b.note || 'aucune') }];
+  if (b.image) parts.push({ inline_data: { mime_type: 'image/jpeg', data: b.image } });
+  const body = { contents: [{ parts }], generationConfig: { responseMimeType: 'application/json', temperature: 0.2 } };
+  let last = '';
+  for (const m of GEMINI_MODELS) {
+    const r = UrlFetchApp.fetch('https://generativelanguage.googleapis.com/v1beta/models/' + m + ':generateContent?key=' + GEMINI_KEY,
+      { method: 'post', contentType: 'application/json', payload: JSON.stringify(body), muteHttpExceptions: true });
+    const code = r.getResponseCode();
+    if (code === 200) {
+      const j = JSON.parse(r.getContentText());
+      const txt = j.candidates[0].content.parts.map(x => x.text || '').join('');
+      return JSON.parse(txt.replace(/^```(json)?|```$/g, '').trim());
+    }
+    last = code === 429 ? 'quota' : 'gemini ' + code;
+    if (code !== 404) break;
+  }
+  throw new Error(last);
+}
+
 // Résumé court pour un widget Android (KWGT, etc.)
 function widget() {
   const d = readAll(), p = d.profile, today = Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd');
@@ -115,3 +150,6 @@ function findRow(sh, col, key) {
   return 0;
 }
 function out(o) { return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON); }
+
+// À lancer une fois depuis l'éditeur (bouton Exécuter) pour autoriser l'accès à Internet (analyse photo).
+function autoriser() { UrlFetchApp.fetch('https://generativelanguage.googleapis.com/'); SpreadsheetApp.getActiveSpreadsheet().getName(); }
