@@ -196,12 +196,12 @@ nav a{font-size:11px}
 <section class="view" id="v-recettes">
   <div class="card">
     <h2>Importer une recette Jow</h2>
-    <p class="mute" style="margin-top:0">Dans Jow, ouvre la recette, touche <b>Partager</b> et choisis <b>KABA Fight</b>. Ou colle le lien ici.</p>
+    <p class="mute" style="margin-top:0">Dans Jow, touche <b>Partager</b> sur une ou plusieurs recettes et choisis <b>KABA Fight</b>. Ou colle un ou plusieurs liens ici. En mode Auto, l'appli choisit en combien de parts séparer chaque recette pour coller à tes objectifs.</p>
     <form id="recForm">
-      <input id="recUrl" placeholder="https://jow.com/fr/recipes/…" autocomplete="off" inputmode="url">
+      <textarea id="recUrl" placeholder="https://jow.com/fr/recipes/…" autocomplete="off" style="min-height:60px"></textarea>
       <div class="grid2" style="margin-top:8px">
         <div><label for="recPortions">Portions commandées dans Jow</label><select id="recPortions"><option>1</option><option selected>2</option><option>3</option><option>4</option></select></div>
-        <div><label for="recParts">Tu les sépares en</label><select id="recParts"><option value="2">2 parts</option><option value="3" selected>3 parts</option><option value="4">4 parts</option><option value="5">5 parts</option><option value="6">6 parts</option></select></div>
+        <div><label for="recParts">Tu les sépares en</label><select id="recParts"><option value="0" selected>Auto (conseillé)</option><option value="2">2 parts</option><option value="3">3 parts</option><option value="4">4 parts</option><option value="5">5 parts</option><option value="6">6 parts</option></select></div>
       </div>
       <div class="btns" style="margin-top:10px"><button type="submit" id="recBtn">Importer</button></div>
     </form>
@@ -739,7 +739,8 @@ function renderRecettes() {
   const list = S.recipes.slice().sort((a, b) => (b.added || '').localeCompare(a.added || ''));
   $('recList').innerHTML = list.length ? list.map(r => { const x = partOf(r); return '<div class="rec"><h3>' + esc(r.name) + '</h3>' +
     '<div class="mute">1 part = <b style="color:var(--mat)">' + fr(x.kcal) + ' kcal</b> · P ' + fr(x.p) + ' g · G ' + fr(x.c) + ' g · L ' + fr(x.f) + ' g <span>(' + r.portions + ' portion' + (r.portions > 1 ? 's' : '') + ' Jow en ' + r.parts + ' parts)</span></div>' +
-    '<div class="row"><select data-parts="' + esc(r.id) + '" aria-label="Nombre de parts">' + [2, 3, 4, 5, 6].map(n => '<option value="' + n + '"' + (n === r.parts ? ' selected' : '') + '>' + n + ' parts</option>').join('') + '</select>' +
+    (suggestParts(r) !== r.parts ? '<div class="mute" style="font-size:13px">Conseillé pour tes objectifs : ' + suggestParts(r) + ' parts</div>' : '') +
+    '<div class="row"><select data-parts="' + esc(r.id) + '" aria-label="Nombre de parts">' + [1, 2, 3, 4, 5, 6].map(n => '<option value="' + n + '"' + (n === r.parts ? ' selected' : '') + '>' + n + (n > 1 ? ' parts' : ' part') + '</option>').join('') + '</select>' +
     '<button data-eat="' + esc(r.id) + '">J’en mange 1 part</button></div>' +
     '<details><summary>Ingrédients et lien</summary><p>' + esc(r.ingredients) + '</p>' + (r.url ? '<a href="' + esc(r.url) + '" target="_blank" rel="noopener" style="color:var(--mat)">Ouvrir dans Jow</a> · ' : '') + '<button class="x" data-delrec="' + esc(r.id) + '">supprimer la recette</button></details></div>'; }).join('')
     : '<p class="mute">Aucune recette pour l’instant. Importe ta première recette Jow ci-dessus.</p>';
@@ -747,37 +748,56 @@ function renderRecettes() {
   for (const b of $('recList').querySelectorAll('[data-eat]')) b.onclick = () => { const r = S.recipes.find(x => x.id === b.dataset.eat); if (!r) return; const x = partOf(r); addMeal({ name: r.name + ' (1/' + r.parts + ')', ...x, src: 'recette' }); };
   for (const b of $('recList').querySelectorAll('[data-delrec]')) b.onclick = () => { push({ action: 'delRecipe', id: b.dataset.delrec }); toast('Recette supprimée'); };
 }
-$('recForm').onsubmit = async e => {
-  e.preventDefault();
-  const url = ($('recUrl').value.match(/https?:\/\/\S+/) || [''])[0];
-  if (!/jow\.(com|fr)\//i.test(url)) { toast('Colle un lien de recette Jow'); return; }
+// Part conseillée : déjeuner et dîner = environ 80 % des calories du jour, soit 40 % chacun
+function mealTarget() { const p = S.p; return Math.round(((p.kcalTrain * (p.trainingDays || []).length + p.kcalRest * (7 - (p.trainingDays || []).length)) / 7) * 0.4); }
+function suggestParts(r) { const total = r.kcal * (r.portions || 2); return clamp(Math.ceil(total / mealTarget() - 0.05), 1, 6); }
+const jowLinks = txt => [...new Set((String(txt).match(/https?:\/\/[^\s"'<>]*jow\.(com|fr)\/[^\s"'<>]+/gi) || []))];
+async function importOne(url, portions, parts) {
+  const r = await fetch(S.cfg.url, { method: 'POST', body: JSON.stringify({ token: S.cfg.token, action: 'importRecipe', url }) }).then(x => x.json());
+  if (!r.ok) throw new Error(r.error === 'nokey' ? 'clé Gemini manquante' : r.error === 'quota' ? 'quota' : /action inconnue|importRecipe/.test(r.error) ? 'script pas à jour' : r.error);
+  const v = r.recipe || {}, pp = v.parPortion || {};
+  if (!pp.kcal) throw new Error('valeurs introuvables');
+  const rec = { id: 'r' + Date.now() + Math.floor(Math.random() * 1000), name: String(v.nom || 'Recette Jow'), url, portions, parts: 2, kcal: Math.round(+pp.kcal || 0), p: Math.round(+pp.proteines || 0), c: Math.round(+pp.glucides || 0), f: Math.round(+pp.lipides || 0), ingredients: (v.ingredients || []).join(', '), added: today() };
+  rec.parts = parts || suggestParts(rec);
+  push({ action: 'setRecipe', recipe: rec });
+  return rec;
+}
+async function importAll(urls) {
   if (!S.cfg) { toast('Connecte d’abord ton Google Sheet'); return; }
   if (!navigator.onLine) { toast('L’import demande une connexion'); return; }
-  $('recBtn').disabled = true; $('recBtn').textContent = 'Import en cours…'; $('recOut').innerHTML = '';
-  try {
-    const r = await fetch(S.cfg.url, { method: 'POST', body: JSON.stringify({ token: S.cfg.token, action: 'importRecipe', url }) }).then(x => x.json());
-    if (!r.ok) {
-      $('recOut').innerHTML = '<p class="mute">' + (r.error === 'nokey' ? 'Il manque la clé Gemini dans le script.' : r.error === 'quota' ? 'Limite gratuite atteinte pour le moment, réessaie dans une minute.' : /action inconnue|importRecipe/.test(r.error) ? 'Ton script Google n’est pas encore à jour : colle la dernière version et redéploie.' : 'Import impossible (' + esc(r.error) + ').') + '</p>';
-      return;
-    }
-    const v = r.recipe || {}, pp = v.parPortion || {};
-    if (!pp.kcal) { $('recOut').innerHTML = '<p class="mute">Je n’ai pas trouvé les valeurs de cette recette. Vérifie le lien.</p>'; return; }
-    const rec = { id: 'r' + Date.now(), name: String(v.nom || 'Recette Jow'), url, portions: +$('recPortions').value, parts: +$('recParts').value, kcal: Math.round(+pp.kcal || 0), p: Math.round(+pp.proteines || 0), c: Math.round(+pp.glucides || 0), f: Math.round(+pp.lipides || 0), ingredients: (v.ingredients || []).join(', '), added: today() };
-    push({ action: 'setRecipe', recipe: rec }); $('recUrl').value = '';
-    const x = partOf(rec);
-    toast(rec.name + ' importée : ' + fr(x.kcal) + ' kcal la part');
-  } catch { $('recOut').innerHTML = '<p class="mute">Pas de réponse du Google Sheet. Réessaie dans un moment.</p>'; }
-  finally { $('recBtn').disabled = false; $('recBtn').textContent = 'Importer'; }
+  const portions = +$('recPortions').value, parts = +$('recParts').value;
+  $('recBtn').disabled = true; const lines = [];
+  const show = () => { $('recOut').innerHTML = '<div style="margin-top:10px">' + lines.join('') + '</div>'; };
+  for (let i = 0; i < urls.length; i++) {
+    $('recBtn').textContent = 'Import ' + (i + 1) + '/' + urls.length + '…';
+    try {
+      let rec;
+      try { rec = await importOne(urls[i], portions, parts); }
+      catch (e) { if (e.message === 'quota') { await new Promise(r => setTimeout(r, 20000)); rec = await importOne(urls[i], portions, parts); } else throw e; }
+      const x = partOf(rec);
+      lines.push('<p style="margin:4px 0">✅ <b>' + esc(rec.name) + '</b> : ' + rec.parts + ' parts de ' + fr(x.kcal) + ' kcal (' + fr(x.p) + ' g prot.)</p>');
+    } catch (e) { lines.push('<p class="mute" style="margin:4px 0">❌ ' + esc(urls[i].slice(0, 60)) + '… : ' + esc(e.message) + '</p>'); }
+    show();
+    if (i < urls.length - 1) await new Promise(r => setTimeout(r, 4000));
+  }
+  $('recBtn').disabled = false; $('recBtn').textContent = 'Importer'; $('recUrl').value = '';
+  toast(urls.length > 1 ? 'Import terminé' : 'Recette importée');
+}
+$('recForm').onsubmit = e => {
+  e.preventDefault();
+  const urls = jowLinks($('recUrl').value);
+  if (!urls.length) { toast('Colle au moins un lien de recette Jow'); return; }
+  importAll(urls);
 };
-// Partage depuis Jow (Android) : l'appli reçoit le lien dans l'adresse
+// Partage depuis Jow (Android) : l'appli reçoit le ou les liens dans l'adresse
 (function sharedLink() {
   const q = new URLSearchParams(location.search);
-  const txt = [q.get('url'), q.get('text'), q.get('title')].filter(Boolean).join(' ');
-  const m = txt.match(/https?:\/\/\S*jow\.(com|fr)\/\S+/i);
   if (!q.toString()) return;
+  const txt = [q.get('title'), q.get('text'), q.get('url')].filter(Boolean).join('\n');
   history.replaceState(null, '', location.pathname + '#recettes');
-  if (m) { $('recUrl').value = m[0]; setTimeout(() => $('recForm').requestSubmit(), 400); }
-  else if (txt) toast('Ce partage ne contient pas de lien Jow');
+  const urls = jowLinks(txt);
+  if (urls.length) { $('recUrl').value = urls.join('\n'); setTimeout(() => importAll(urls), 500); }
+  else $('recOut').innerHTML = '<p class="mute">Ce partage ne contient pas de lien de recette Jow. Voici ce que l’appli a reçu (envoie une capture à Claude si besoin) :</p><p style="white-space:pre-wrap;font-size:13px">' + esc(txt.slice(0, 600)) + '</p>';
 })();
 
 /* ---------- dictée ---------- */

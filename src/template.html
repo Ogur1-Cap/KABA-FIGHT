@@ -113,12 +113,12 @@ nav a{font-size:11px}
 <section class="view" id="v-recettes">
   <div class="card">
     <h2>Importer une recette Jow</h2>
-    <p class="mute" style="margin-top:0">Dans Jow, ouvre la recette, touche <b>Partager</b> et choisis <b>KABA Fight</b>. Ou colle le lien ici.</p>
+    <p class="mute" style="margin-top:0">Dans Jow, touche <b>Partager</b> sur une ou plusieurs recettes et choisis <b>KABA Fight</b>. Ou colle un ou plusieurs liens ici. En mode Auto, l'appli choisit en combien de parts séparer chaque recette pour coller à tes objectifs.</p>
     <form id="recForm">
-      <input id="recUrl" placeholder="https://jow.com/fr/recipes/…" autocomplete="off" inputmode="url">
+      <textarea id="recUrl" placeholder="https://jow.com/fr/recipes/…" autocomplete="off" style="min-height:60px"></textarea>
       <div class="grid2" style="margin-top:8px">
         <div><label for="recPortions">Portions commandées dans Jow</label><select id="recPortions"><option>1</option><option selected>2</option><option>3</option><option>4</option></select></div>
-        <div><label for="recParts">Tu les sépares en</label><select id="recParts"><option value="2">2 parts</option><option value="3" selected>3 parts</option><option value="4">4 parts</option><option value="5">5 parts</option><option value="6">6 parts</option></select></div>
+        <div><label for="recParts">Tu les sépares en</label><select id="recParts"><option value="0" selected>Auto (conseillé)</option><option value="2">2 parts</option><option value="3">3 parts</option><option value="4">4 parts</option><option value="5">5 parts</option><option value="6">6 parts</option></select></div>
       </div>
       <div class="btns" style="margin-top:10px"><button type="submit" id="recBtn">Importer</button></div>
     </form>
