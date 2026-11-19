@@ -47,6 +47,9 @@ nav a{font-size:11px}
 .rec select{width:auto;min-width:120px}
 .rec details{font-size:14px;color:var(--mute);margin-top:6px}
 .mic{flex:0 0 auto}
+.msg{padding:10px 12px;border-radius:14px;margin:8px 0;max-width:88%;white-space:pre-wrap;line-height:1.45}
+.msg.user{background:var(--mat);color:var(--on);margin-left:auto}
+.msg.assistant{background:#101013;border:1px solid var(--line)}
 .pbtn{display:flex;align-items:center;justify-content:center;min-height:48px;border-radius:12px;padding:10px 14px;font:600 15px Inter,system-ui,sans-serif;cursor:pointer;background:var(--mat);color:var(--on);flex:1 1 140px}
 .pbtn.ghost{background:transparent;color:var(--ink);border:1px solid var(--line)}
 .mic.on{background:var(--glove);color:#fff}
@@ -106,9 +109,12 @@ nav a{font-size:11px}
 <section class="view" id="v-coach">
   <div class="card" id="weekCard"></div>
   <div class="card">
-    <h2>Demander à Claude</h2>
-    <p class="mute">Le bouton copie un résumé de tes 14 derniers jours. Colle-le dans Claude avec ta question, ou envoie-lui une photo de repas : il l'ajoutera à ton Google Sheet.</p>
-    <div class="btns"><button id="copyCtx">Copier mon résumé</button><a id="openClaude" href="https://claude.ai/new" target="_blank" rel="noopener" style="display:flex"><button class="ghost" style="width:100%">Ouvrir Claude</button></a></div>
+    <h2>Ton coach</h2>
+    <p class="mute" style="margin-top:0">Pose tes questions : il connaît tes objectifs, tes pesées, tes repas et tes recettes Jow en cours. Pour la coupe finale (eau), valide toujours avec ton coach de boxe.</p>
+    <div id="chatLog"></div>
+    <textarea id="chatIn" placeholder="Ex. : je mange au resto vendredi soir, je m'organise comment ?" style="margin-top:8px"></textarea>
+    <div class="btns" style="margin-top:8px"><button type="button" class="ghost mic" id="chatMic" hidden>🎙 Dicter</button><button id="chatSend">Envoyer</button></div>
+    <div class="row" style="display:flex;justify-content:space-between;margin-top:6px"><button class="x" id="chatClear">Effacer la conversation</button><span class="mute" style="font-size:12px">Réponses générées par Gemini</span></div>
   </div>
 </section>
 

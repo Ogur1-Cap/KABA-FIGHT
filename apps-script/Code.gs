@@ -9,7 +9,7 @@ const TOKEN = 'A_REMPLACER';
 const TZ = 'Europe/Paris';
 // Analyse des repas en photo : clé API Gemini gratuite (aistudio.google.com > Get API key). Ne la publie pas.
 const GEMINI_KEY = 'A_REMPLACER';
-const GEMINI_MODELS = ['gemini-flash-latest', 'gemini-flash-lite-latest']; // complétés automatiquement par la liste des modèles disponibles
+const GEMINI_MODELS = ['gemini-flash-lite-latest', 'gemini-flash-latest']; // le modèle léger d'abord : bien plus rapide, suffisant pour estimer un repas // complétés automatiquement par la liste des modèles disponibles
 const GEMINI_MAX_PAR_JOUR = 80; // garde-fou : au-delà, les analyses sont refusées jusqu'au lendemain
 
 function doGet(e) {
@@ -24,6 +24,21 @@ function doPost(e) {
   try { b = JSON.parse(e.postData.contents); } catch (err) { return out({ ok: false, error: 'json' }); }
   if (b.token !== TOKEN) return out({ ok: false, error: 'cle' });
   if (b.action === 'logError') { journal('erreur appli', 'erreur', 0, 0, String(b.where || '') + ' : ' + String(b.message || '').slice(0, 300)); return out({ ok: true }); }
+  if (b.action === 'chat') {
+    const t0 = Date.now();
+    try {
+      const hist = (b.history || []).slice(-12).map(m => ({ role: m.role === 'user' ? 'user' : 'model', parts: [{ text: String(m.text).slice(0, 2000) }] }));
+      if (!hist.length || hist[hist.length - 1].role !== 'user') throw new Error('question vide');
+      const answer = gemini(null, { json: false, contents: hist, system: COACH_PROMPT + '\n\nDONNÉES DE RAPH :\n' + String(b.context || '').slice(0, 12000) });
+      journal('coach', 'ok', Date.now() - t0, LAST_TOKENS, String(hist[hist.length - 1].parts[0].text).slice(0, 80));
+      coachLog(hist[hist.length - 1].parts[0].text, answer);
+      return out({ ok: true, answer });
+    } catch (err) {
+      const e = String(err.message || err).replace(/key=[^&\s]+/g, 'key=***').replace(/^Expiration du délai.*/, 'gemini lent');
+      journal('coach', 'erreur', Date.now() - t0, LAST_TOKENS, e.slice(0, 300));
+      return out({ ok: false, error: e });
+    }
+  }
   if (b.action === 'importRecipe' || b.action === 'analyze') {
     const t0 = Date.now(), label = b.action === 'analyze' ? (b.image ? 'analyse photo' : 'analyse texte') : 'import recette';
     try {
@@ -33,7 +48,7 @@ function doPost(e) {
       return out({ ok: true, ...res });
     } catch (err) {
       journal(label, 'erreur', Date.now() - t0, LAST_TOKENS, String(err.message || err).slice(0, 300));
-      return out({ ok: false, error: String(err.message || err) });
+      return out({ ok: false, error: String(err.message || err).replace(/key=[^&\s]+/g, 'key=***').replace(/^Expiration du délai.*/, 'gemini lent') });
     }
   }
   const lock = LockService.getScriptLock();
@@ -201,15 +216,19 @@ function importMenu(q) {
 }
 
 let LAST_TOKENS = 0;
-function gemini(parts) {
+function gemini(parts, opt) {
+  opt = opt || {}; const json = opt.json !== false;
   if (!GEMINI_KEY || GEMINI_KEY === 'A_REMPLACER') throw new Error('nokey');
   const props = PropertiesService.getScriptProperties(), k = 'gemini_' + Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd');
   const used = Number(props.getProperty(k) || 0);
   if (used >= GEMINI_MAX_PAR_JOUR) throw new Error('limite_jour');
   props.setProperty(k, String(used + 1));
   // Réflexion réduite au minimum : les modèles récents « réfléchissent » longtemps par défaut, inutile ici
-  const fast = { contents: [{ parts }], generationConfig: { responseMimeType: 'application/json', temperature: 0.2, thinkingConfig: { thinkingLevel: 'low' } } };
-  const plain = { contents: [{ parts }], generationConfig: { responseMimeType: 'application/json', temperature: 0.2 } };
+  const cfg = json ? { responseMimeType: 'application/json', temperature: 0.2 } : { temperature: 0.6, maxOutputTokens: 700 };
+  const base = { contents: opt.contents || [{ parts }] };
+  if (opt.system) base.systemInstruction = { parts: [{ text: opt.system }] };
+  const fast = Object.assign({}, base, { generationConfig: Object.assign({}, cfg, { thinkingConfig: { thinkingLevel: 'low' } }) });
+  const plain = Object.assign({}, base, { generationConfig: cfg });
   const t0 = Date.now();
   let last = '', saturated = false;
   for (const m of geminiModels()) {
@@ -224,7 +243,7 @@ function gemini(parts) {
         const j = JSON.parse(r.getContentText());
         LAST_TOKENS = (j.usageMetadata && j.usageMetadata.totalTokenCount) || 0;
         const txt = j.candidates[0].content.parts.map(x => x.text || '').join('');
-        return JSON.parse(txt.replace(/^```(json)?|```$/g, '').trim());
+        return json ? JSON.parse(txt.replace(/^```(json)?|```$/g, '').trim()) : txt.trim();
       }
       if (code === 429) throw new Error('quota');
       if (code === 503 || code === 500) { saturated = true; last = 'gemini ' + code; Utilities.sleep(2500); continue; } // saturé : on réessaie, puis modèle suivant
@@ -247,7 +266,7 @@ function geminiModels() {
         .filter(x => (x.supportedGenerationMethods || []).indexOf('generateContent') >= 0)
         .map(x => x.name.replace('models/', ''))
         .filter(n => /flash/.test(n) && !/image|tts|audio|live|embedding|thinking|exp/.test(n))
-        .sort((a, b) => (/preview/.test(a) - /preview/.test(b)) || b.localeCompare(a, 'en', { numeric: true }));
+        .sort((a, b) => (/preview/.test(a) - /preview/.test(b)) || (/lite/.test(b) - /lite/.test(a)) || b.localeCompare(a, 'en', { numeric: true }));
       names = names.concat(found.filter(n => names.indexOf(n) < 0)).slice(0, 6);
     }
   } catch (e) {}
@@ -268,13 +287,30 @@ function widget() {
   return { ok: true, jours: j, dernierPoids: last, resteKg: Math.round((last - p.targetMorning) * 10) / 10, kcalMangees: eaten, kcalObjectif: target, kcalRestantes: target - eaten, proteines: prot, proteinesObjectif: p.protein, typeJour: train ? 'boxe' : 'repos' };
 }
 
+const COACH_PROMPT = `Tu es le coach nutrition intégré à l'appli KABA Fight de raph, boxeur de 26 ans qui prépare une compétition (pesée le jour même, l'après-midi).
+Réponds en français, en le tutoyant, de façon directe, bienveillante et concrète, en 120 mots maximum sauf s'il demande plus de détails.
+Appuie-toi sur ses données ci-dessous (objectifs, pesées, repas, recettes Jow en cours) et cite des chiffres quand c'est utile.
+Règles : perte de 0,5 à 1 kg par semaine ; protéines élevées ; alimentation pauvre en fibres seulement les 4 derniers jours (position ISSN 2025) ; jamais de régime extrême, de jeûne ni de sautage de repas avant l'entraînement ; toute déshydratation (sauna, etc.) uniquement avec son coach de boxe ; tu n'es pas médecin et tu le rediriges vers un professionnel pour toute question de santé.
+Si une donnée manque, dis-le au lieu d'inventer.`;
+
+// Onglet Coach (créé automatiquement) : questions et réponses, pour que Claude puisse vérifier les conseils de Gemini
+function coachLog(q, a) {
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    let sh = ss.getSheetByName('Coach');
+    if (!sh) { sh = ss.insertSheet('Coach'); sh.appendRow(['Date', 'Question', 'Réponse de Gemini']); sh.setFrozenRows(1); sh.getRange(1, 1, 1, 3).setFontWeight('bold'); }
+    sh.appendRow([Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd HH:mm:ss'), String(q).slice(0, 2000), String(a).slice(0, 5000)]);
+    if (sh.getLastRow() > 400) sh.deleteRows(2, 50);
+  } catch (e) {}
+}
+
 // Onglet Journal (créé automatiquement) : chaque appel à Gemini et chaque erreur de l'appli
 function journal(action, statut, ms, tokens, detail) {
   try {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
     let sh = ss.getSheetByName('Journal');
     if (!sh) { sh = ss.insertSheet('Journal'); sh.appendRow(['Date', 'Action', 'Statut', 'Durée (s)', 'Tokens Gemini', 'Détail']); sh.setFrozenRows(1); sh.getRange(1, 1, 1, 6).setFontWeight('bold'); }
-    sh.appendRow([Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd HH:mm:ss'), action, statut, Math.round(ms / 100) / 10, tokens || 0, detail || '']);
+    sh.appendRow([Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd HH:mm:ss'), action, statut, Math.round(ms / 100) / 10, tokens || 0, String(detail || '').replace(/key=[^&\s]+/g, 'key=***')]);
     if (sh.getLastRow() > 600) sh.deleteRows(2, 100);
   } catch (e) {}
 }

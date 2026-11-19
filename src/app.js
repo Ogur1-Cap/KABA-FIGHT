@@ -211,7 +211,7 @@ function renderReglages() {
   }
   $('adjList').innerHTML = S.adj.length ? S.adj.map(a => '<div>' + fdate(a.date) + ' : ' + fr(a.oldTrain) + '/' + fr(a.oldRest) + ' → <b style="color:var(--ink)">' + fr(a.train) + '/' + fr(a.rest) + '</b> kcal (dépense ' + fr(a.tdee) + ')</div>').join('') : 'Aucun ajustement pour l’instant.';
 }
-function renderAll() { renderHeader(); renderToday(); renderCourbe(); renderCoach(); renderRecettes(); renderReglages(); }
+function renderAll() { renderHeader(); renderToday(); renderCourbe(); renderCoach(); renderRecettes(); renderReglages(); if ($('chatLog')) renderChat(); }
 
 /* ---------- navigation ---------- */
 const VIEWS = ['today', 'courbe', 'coach', 'recettes', 'reglages'];
@@ -238,13 +238,39 @@ $('setForm').onsubmit = e => {
 };
 $('typeBtn').onclick = () => { const t = today(); push({ action: 'setType', date: t, type: isTrain(S.p, t, S.days) ? 'repos' : 'boxe' }); };
 
-/* ---------- résumé pour Claude ---------- */
+/* ---------- coach intégré (Gemini via le Google Sheet) ---------- */
 function context() {
-  const p = S.p, t = today(), cur = current(p, S.days, t), pr = proposal(p, S.days, t);
-  const last = cur.ser.slice(-14).map(r => { const tt = totals(S.days[r.date]); return r.date + ' : poids ' + (r.w ?? '-') + ', ' + Math.round(tt.kcal) + ' kcal, ' + Math.round(tt.p) + ' g prot., ' + (isTrain(p, r.date, S.days) ? 'boxe' : 'repos'); }).join('\n');
-  return 'KABA Fight, résumé du ' + t + '\nPoids lissé ' + cur.est.toFixed(1) + ' kg, objectif ' + p.targetMorning + ' kg le matin du ' + p.competitionDate + '.\nObjectifs : ' + p.kcalTrain + ' kcal boxe / ' + p.kcalRest + ' kcal repos, ' + p.protein + ' g protéines.\nDépense estimée ' + pr.tdee.value + ' kcal (' + pr.tdee.source + ').\n14 derniers jours :\n' + last + '\n\nMa question : ';
+  const p = S.p, t = today(), cur = current(p, S.days, t), pr = proposal(p, S.days, t), tg = targetFor(p, t, S.days), tt = totals(S.days[t]);
+  const last = cur.ser.slice(-14).map(r => { const x = totals(S.days[r.date]); return r.date + ' : poids ' + (r.w ?? '-') + ', ' + Math.round(x.kcal) + ' kcal, ' + Math.round(x.p) + ' g prot., ' + (isTrain(p, r.date, S.days) ? 'boxe' : 'repos'); }).join('\n');
+  const meals = ((S.days[t] || {}).meals || []).map(m => m.name + ' ' + m.kcal + ' kcal ' + m.p + ' g prot.').join(' ; ') || 'rien noté';
+  const recs = S.recipes.filter(r => r.status !== 'archivée').map(r => { const x = partOf(r); return r.name + ' : ' + left(r) + ' part(s) restante(s) de ' + x.kcal + ' kcal / ' + x.p + ' g prot.'; }).join('\n') || 'aucune';
+  return 'Aujourd’hui ' + t + ' (' + (isTrain(p, t, S.days) ? 'jour de boxe' : 'jour de repos') + '), pesée de compétition le ' + p.competitionDate + ' (J-' + diffDays(t, p.competitionDate) + '), objectif ' + p.targetMorning + ' kg le matin, catégorie ' + p.category + ' kg.\n' +
+    'Profil : homme 26 ans, 1,76 m, boxe mardi 20-22h et jeudi 20h30-22h, travail assis.\nPoids lissé ' + cur.est.toFixed(1) + ' kg (départ ' + p.startWeight + ' kg le ' + p.startDate + ').\n' +
+    'Objectifs : ' + p.kcalTrain + ' kcal jour boxe / ' + p.kcalRest + ' kcal repos, ' + p.protein + ' g protéines, ' + p.fat + ' g lipides. Dépense estimée ' + pr.tdee.value + ' kcal (' + pr.tdee.source + ').\n' +
+    'Aujourd’hui : ' + Math.round(tt.kcal) + '/' + tg.kcal + ' kcal, ' + Math.round(tt.p) + '/' + tg.p + ' g protéines. Repas : ' + meals + '\n' +
+    'Recettes Jow en cours :\n' + recs + '\n14 derniers jours :\n' + last;
 }
-$('copyCtx').onclick = async () => { try { await navigator.clipboard.writeText(context()); toast('Résumé copié : colle-le dans Claude'); } catch { toast('Copie impossible sur cet appareil'); } };
+S.chat = LS.get('chat', []);
+function renderChat() {
+  $('chatLog').innerHTML = S.chat.length ? S.chat.slice(-20).map(m => '<div class="msg ' + (m.role === 'user' ? 'user' : 'assistant') + '">' + esc(m.text) + '</div>').join('')
+    : '<p class="mute">Pas encore de question. Exemples : « Qu’est-ce que je mange ce soir avec ce qu’il me reste ? », « Je suis en avance ou en retard ? »</p>';
+}
+$('chatSend').onclick = async () => {
+  const q = $('chatIn').value.trim(); if (!q) return;
+  if (!S.cfg) { toast('Connecte d’abord ton Google Sheet'); return; }
+  if (!navigator.onLine) { toast('Le coach demande une connexion'); return; }
+  S.chat.push({ role: 'user', text: q }); $('chatIn').value = ''; renderChat();
+  const wait = document.createElement('div'); wait.className = 'msg assistant'; wait.textContent = '…'; $('chatLog').appendChild(wait);
+  $('chatSend').disabled = true;
+  try {
+    const ctl = new AbortController(), tm = setTimeout(() => ctl.abort(), 90000);
+    const r = await fetch(S.cfg.url, { method: 'POST', signal: ctl.signal, body: JSON.stringify({ token: S.cfg.token, action: 'chat', context: context(), history: S.chat.slice(-12) }) }).then(x => x.json()).finally(() => clearTimeout(tm));
+    if (r.ok) S.chat.push({ role: 'assistant', text: r.answer });
+    else { S.chat.pop(); $('chatIn').value = q; toast(/action inconnue/.test(r.error) ? 'Script Google pas à jour pour le coach' : /gemini 5|gemini lent/.test(r.error) ? 'Gemini est saturé, réessaie dans un moment' : r.error === 'quota' ? 'Limite gratuite atteinte, réessaie dans une minute' : 'Erreur : ' + r.error); }
+  } catch (e) { S.chat.pop(); $('chatIn').value = q; toast(e && e.name === 'AbortError' ? 'Gemini met trop de temps, réessaie plus tard' : 'Pas de réponse du Google Sheet'); }
+  finally { S.chat = S.chat.slice(-40); LS.set('chat', S.chat); $('chatSend').disabled = false; renderChat(); }
+};
+$('chatClear').onclick = () => { S.chat = []; LS.set('chat', S.chat); renderChat(); };
 
 /* ---------- ajout de repas ---------- */
 let basket = [];
@@ -510,21 +536,22 @@ $('recForm').onsubmit = e => {
 })();
 
 /* ---------- dictée ---------- */
-(function dictation() {
+function wireDictation(btnId, fieldId) {
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SR) return;
-  const btn = $('micBtn'); btn.hidden = false;
+  const btn = $(btnId); btn.hidden = false;
   let rec = null;
   btn.onclick = () => {
     if (rec) { rec.stop(); return; }
     rec = new SR(); rec.lang = 'fr-FR'; rec.interimResults = true; rec.continuous = false;
-    const base = $('photoNote').value ? $('photoNote').value + ' ' : '';
-    rec.onresult = e => { let s = ''; for (const r of e.results) s += r[0].transcript; $('photoNote').value = base + s; };
+    const base = $(fieldId).value ? $(fieldId).value + ' ' : '';
+    rec.onresult = e => { let s = ''; for (const r of e.results) s += r[0].transcript; $(fieldId).value = base + s; };
     rec.onerror = e => { if (e.error === 'not-allowed') toast('Autorise le micro pour dicter'); else if (e.error !== 'no-speech' && e.error !== 'aborted') toast('Dictée interrompue'); };
     rec.onend = () => { rec = null; btn.classList.remove('on'); btn.textContent = '🎙 Dicter'; };
     try { rec.start(); btn.classList.add('on'); btn.textContent = '⏹ Arrêter'; } catch { rec = null; }
   };
-})();
+}
+wireDictation('micBtn', 'photoNote'); wireDictation('chatMic', 'chatIn');
 
 /* ---------- remontée des erreurs vers le Journal du Google Sheet ---------- */
 let errCount = 0;
