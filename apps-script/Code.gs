@@ -152,4 +152,4 @@ function findRow(sh, col, key) {
 function out(o) { return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON); }
 
 // À lancer une fois depuis l'éditeur (bouton Exécuter) pour autoriser l'accès à Internet (analyse photo).
-function autoriser() { UrlFetchApp.fetch('https://generativelanguage.googleapis.com/'); SpreadsheetApp.getActiveSpreadsheet().getName(); }
+function autoriser() { UrlFetchApp.fetch('https://generativelanguage.googleapis.com/', { muteHttpExceptions: true }); SpreadsheetApp.getActiveSpreadsheet().getName(); }
