@@ -774,8 +774,12 @@ function recCard(r) {
 function renderRecettes() {
   const sorted = S.recipes.slice().sort((a, b) => (b.added || '').localeCompare(a.added || ''));
   const act = sorted.filter(r => !isArch(r)), arch = sorted.filter(isArch);
-  $('recList').innerHTML = (act.length ? act.map(recCard).join('') : '<p class="mute">Aucune recette en cours. Importe tes recettes Jow ci-dessus.</p>') +
-    (arch.length ? '<details style="margin-top:12px"><summary class="mute">Recettes terminées (' + arch.length + ')</summary>' + arch.map(recCard).join('') + '</details>' : '');
+  if (!renderRecettes.tab) renderRecettes.tab = 'act';
+  const tab = renderRecettes.tab;
+  $('recList').innerHTML = '<div class="tabs" style="grid-template-columns:repeat(2,minmax(0,1fr));margin-top:0"><button data-rtab="act" class="' + (tab === 'act' ? 'on' : '') + '">En cours (' + act.length + ')</button><button data-rtab="arch" class="' + (tab === 'arch' ? 'on' : '') + '">Terminées (' + arch.length + ')</button></div>' +
+    (tab === 'act' ? (act.length ? act.map(recCard).join('') : '<p class="mute">Aucune recette en cours. Importe tes recettes Jow ci-dessus.</p>')
+      : (arch.length ? arch.map(recCard).join('') : '<p class="mute">Les recettes terminées ou déjà mangées se rangent ici.</p>'));
+  for (const b of $('recList').querySelectorAll('[data-rtab]')) b.onclick = () => { renderRecettes.tab = b.dataset.rtab; renderRecettes(); };
   const find = id => S.recipes.find(x => x.id === id);
   for (const s of $('recList').querySelectorAll('[data-parts]')) s.onchange = () => { const r = find(s.dataset.parts); if (r) push({ action: 'setRecipe', recipe: { ...r, parts: +s.value } }); };
   for (const b of $('recList').querySelectorAll('[data-eat]')) b.onclick = () => {
