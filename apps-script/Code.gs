@@ -10,6 +10,7 @@ const TZ = 'Europe/Paris';
 // Analyse des repas en photo : clé API Gemini gratuite (aistudio.google.com > Get API key). Ne la publie pas.
 const GEMINI_KEY = 'A_REMPLACER';
 const GEMINI_MODELS = ['gemini-flash-latest', 'gemini-2.5-flash'];
+const GEMINI_MAX_PAR_JOUR = 80; // garde-fou : au-delà, les analyses sont refusées jusqu'au lendemain
 
 function doGet(e) {
   const p = e.parameter || {};
@@ -22,8 +23,19 @@ function doPost(e) {
   let b;
   try { b = JSON.parse(e.postData.contents); } catch (err) { return out({ ok: false, error: 'json' }); }
   if (b.token !== TOKEN) return out({ ok: false, error: 'cle' });
-  if (b.action === 'importRecipe') { try { return out({ ok: true, ...importRecipe(b) }); } catch (err) { return out({ ok: false, error: String(err.message || err) }); } }
-  if (b.action === 'analyze') { try { return out({ ok: true, result: analyze(b) }); } catch (err) { return out({ ok: false, error: String(err.message || err) }); } }
+  if (b.action === 'logError') { journal('erreur appli', 'erreur', 0, 0, String(b.where || '') + ' : ' + String(b.message || '').slice(0, 300)); return out({ ok: true }); }
+  if (b.action === 'importRecipe' || b.action === 'analyze') {
+    const t0 = Date.now(), label = b.action === 'analyze' ? (b.image ? 'analyse photo' : 'analyse texte') : 'import recette';
+    try {
+      const res = b.action === 'analyze' ? { result: analyze(b) } : importRecipe(b);
+      const n = res.result ? (res.result.items || []).length + ' aliment(s)' : res.links ? res.links.length + ' lien(s)' : (res.recipes || []).length + ' recette(s)';
+      journal(label, 'ok', Date.now() - t0, LAST_TOKENS, n + (b.url ? ' · ' + String(b.url).slice(0, 80) : ''));
+      return out({ ok: true, ...res });
+    } catch (err) {
+      journal(label, 'erreur', Date.now() - t0, LAST_TOKENS, String(err.message || err).slice(0, 300));
+      return out({ ok: false, error: String(err.message || err) });
+    }
+  }
   const lock = LockService.getScriptLock();
   lock.waitLock(20000);
   try {
@@ -186,8 +198,13 @@ function importMenu(q) {
   return { recipes: (res && res.recettes) || [], finalUrl: 'https://jow.fr/cooking/recipes-selection/' + q.sharingId, preview: json.slice(0, 300) };
 }
 
+let LAST_TOKENS = 0;
 function gemini(parts) {
   if (!GEMINI_KEY || GEMINI_KEY === 'A_REMPLACER') throw new Error('nokey');
+  const props = PropertiesService.getScriptProperties(), k = 'gemini_' + Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd');
+  const used = Number(props.getProperty(k) || 0);
+  if (used >= GEMINI_MAX_PAR_JOUR) throw new Error('limite_jour');
+  props.setProperty(k, String(used + 1));
   const body = { contents: [{ parts }], generationConfig: { responseMimeType: 'application/json', temperature: 0.2 } };
   let last = '';
   for (const m of GEMINI_MODELS) {
@@ -196,6 +213,7 @@ function gemini(parts) {
     const code = r.getResponseCode();
     if (code === 200) {
       const j = JSON.parse(r.getContentText());
+      LAST_TOKENS = (j.usageMetadata && j.usageMetadata.totalTokenCount) || 0;
       const txt = j.candidates[0].content.parts.map(x => x.text || '').join('');
       return JSON.parse(txt.replace(/^```(json)?|```$/g, '').trim());
     }
@@ -217,6 +235,17 @@ function widget() {
   const last = ws.length ? d.days[ws[ws.length - 1]].weight : p.startWeight;
   const j = Math.round((new Date(p.competitionDate + 'T12:00:00') - new Date(today + 'T12:00:00')) / 864e5);
   return { ok: true, jours: j, dernierPoids: last, resteKg: Math.round((last - p.targetMorning) * 10) / 10, kcalMangees: eaten, kcalObjectif: target, kcalRestantes: target - eaten, proteines: prot, proteinesObjectif: p.protein, typeJour: train ? 'boxe' : 'repos' };
+}
+
+// Onglet Journal (créé automatiquement) : chaque appel à Gemini et chaque erreur de l'appli
+function journal(action, statut, ms, tokens, detail) {
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    let sh = ss.getSheetByName('Journal');
+    if (!sh) { sh = ss.insertSheet('Journal'); sh.appendRow(['Date', 'Action', 'Statut', 'Durée (s)', 'Tokens Gemini', 'Détail']); sh.setFrozenRows(1); sh.getRange(1, 1, 1, 6).setFontWeight('bold'); }
+    sh.appendRow([Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd HH:mm:ss'), action, statut, Math.round(ms / 100) / 10, tokens || 0, detail || '']);
+    if (sh.getLastRow() > 600) sh.deleteRows(2, 100);
+  } catch (e) {}
 }
 
 function rows(sh) { const n = sh.getLastRow(); return n < 2 ? [] : sh.getRange(2, 1, n - 1, sh.getLastColumn()).getValues(); }

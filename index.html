@@ -721,7 +721,7 @@ function renderDraft() {
   $('anaOut').innerHTML = '<div class="card" style="margin-top:12px"><label for="dName">Nom du repas</label><input id="dName" value="' + esc(draft.name) + '">' +
     '<p class="mute" style="margin:10px 0 4px">Vérifie les grammages : c’est ce qui compte le plus. Confiance : ' + esc(draft.conf || '?') + '.</p>' +
     draft.items.map((i, k) => '<div class="it"><span>' + esc(i.aliment) + '</span><input type="number" inputmode="numeric" data-k="' + k + '" value="' + Math.round(i.g) + '" aria-label="Grammes de ' + esc(i.aliment) + '"><span style="text-align:right">' + fr(scaled(i).kcal) + ' kcal</span><button class="x" data-rm="' + k + '" aria-label="Retirer">✕</button></div>').join('') +
-    '<p style="margin:10px 0"><b>' + fr(t.kcal) + ' kcal</b> · P ' + fr(t.p) + ' g · G ' + fr(t.c) + ' g · L ' + fr(t.f) + ' g</p>' +
+    '<p style="margin:10px 0"><b>' + fr(t.kcal) + ' kcal</b> · P ' + fr(t.p) + ' g · G ' + fr(t.c) + ' g · L ' + fr(t.f) + ' g</p>' + warnHtml(doubt(t, 'repas')) +
     (draft.q ? '<p class="mute">Question : ' + esc(draft.q) + ' Précise dans le champ ci-dessus et relance si besoin.</p>' : '') +
     '<div class="btns"><button id="dSave">Enregistrer ce repas</button></div></div>';
   for (const inp of $('anaOut').querySelectorAll('[data-k]')) inp.onchange = () => { draft.items[+inp.dataset.k].g = Math.max(0, +inp.value || 0); draft.name = $('dName').value; renderDraft(); };
@@ -733,12 +733,23 @@ function renderDraft() {
   };
 }
 
+/* ---------- contrôle de ce que renvoie Gemini ---------- */
+// Vérifie que les calories collent aux macros (4 kcal/g prot. et gluc., 9 kcal/g lip.) et repère les valeurs extrêmes
+function doubt(x, kind) {
+  const calc = 4 * x.p + 4 * x.c + 9 * x.f, w = [];
+  if (x.kcal > 0 && Math.abs(calc - x.kcal) / x.kcal > 0.25) w.push('calories (' + fr(x.kcal) + ') et macros (' + fr(calc) + ' kcal) ne collent pas');
+  if (kind === 'repas' && (x.kcal > 1600 || x.kcal < 60)) w.push('valeur inhabituelle pour un repas');
+  if (kind === 'portion' && (x.kcal > 1500 || x.kcal < 150)) w.push('valeur inhabituelle pour une portion');
+  return w;
+}
+const warnHtml = w => w.length ? '<p style="margin:6px 0;color:var(--glove);font-size:14px">⚠️ À vérifier : ' + esc(w.join(' ; ')) + '.</p>' : '';
+
 /* ---------- recettes Jow ---------- */
 const partOf = r => { const k = (r.portions || 2) / (r.parts || 2); return { kcal: Math.round(r.kcal * k), p: Math.round(r.p * k), c: Math.round(r.c * k), f: Math.round(r.f * k) }; };
 function renderRecettes() {
   const list = S.recipes.slice().sort((a, b) => (b.added || '').localeCompare(a.added || ''));
   $('recList').innerHTML = list.length ? list.map(r => { const x = partOf(r); return '<div class="rec"><h3>' + esc(r.name) + '</h3>' +
-    '<div class="mute">1 part = <b style="color:var(--mat)">' + fr(x.kcal) + ' kcal</b> · P ' + fr(x.p) + ' g · G ' + fr(x.c) + ' g · L ' + fr(x.f) + ' g <span>(' + r.portions + ' portion' + (r.portions > 1 ? 's' : '') + ' Jow en ' + r.parts + ' parts)</span></div>' +
+    warnHtml(doubt({ kcal: r.kcal, p: r.p, c: r.c, f: r.f }, 'portion')) + '<div class="mute">1 part = <b style="color:var(--mat)">' + fr(x.kcal) + ' kcal</b> · P ' + fr(x.p) + ' g · G ' + fr(x.c) + ' g · L ' + fr(x.f) + ' g <span>(' + r.portions + ' portion' + (r.portions > 1 ? 's' : '') + ' Jow en ' + r.parts + ' parts)</span></div>' +
     (suggestParts(r) !== r.parts ? '<div class="mute" style="font-size:13px">Conseillé pour tes objectifs : ' + suggestParts(r) + ' parts</div>' : '') +
     '<div class="row"><select data-parts="' + esc(r.id) + '" aria-label="Nombre de parts">' + [1, 2, 3, 4, 5, 6].map(n => '<option value="' + n + '"' + (n === r.parts ? ' selected' : '') + '>' + n + (n > 1 ? ' parts' : ' part') + '</option>').join('') + '</select>' +
     '<button data-eat="' + esc(r.id) + '">J’en mange 1 part</button></div>' +
@@ -761,7 +772,7 @@ function makeRec(v, url, portions, parts) {
 // Renvoie { links } (menu Jow à déplier) ou { recs } (recettes importées)
 async function importOne(url, portions, parts) {
   const r = await fetch(S.cfg.url, { method: 'POST', body: JSON.stringify({ token: S.cfg.token, action: 'importRecipe', url }) }).then(x => x.json());
-  if (!r.ok) throw new Error(r.error === 'nokey' ? 'clé Gemini manquante' : r.error === 'quota' ? 'quota' : /action inconnue|importRecipe|is not defined/.test(r.error) ? 'script Google pas à jour' : r.error);
+  if (!r.ok) throw new Error(r.error === 'nokey' ? 'clé Gemini manquante' : r.error === 'quota' ? 'quota' : r.error === 'limite_jour' ? 'limite de sécurité du jour atteinte (80 analyses), reprise demain' : /action inconnue|importRecipe|is not defined/.test(r.error) ? 'script Google pas à jour' : r.error);
   if (Array.isArray(r.links) && r.links.length) return { links: r.links };
   const list = Array.isArray(r.recipes) ? r.recipes : r.recipe ? [r.recipe] : [];
   const recs = list.filter(v => v && v.parPortion && +v.parPortion.kcal).map(v => makeRec(v, v.lien || (list.length === 1 ? url : (r.finalUrl || url)), portions, parts));
@@ -794,7 +805,7 @@ async function importAll(urls) {
       if (res.links) {
         const fresh = res.links.filter(l => !seen.has(l)); fresh.forEach(l => { seen.add(l); queue.push(l); });
         lines.push('<p style="margin:4px 0">📋 Menu Jow : ' + fresh.length + ' recette' + (fresh.length > 1 ? 's' : '') + ' trouvée' + (fresh.length > 1 ? 's' : '') + '</p>');
-      } else for (const rec of res.recs) { const x = partOf(rec); lines.push('<p style="margin:4px 0">✅ <b>' + esc(rec.name) + '</b> : ' + rec.parts + ' part' + (rec.parts > 1 ? 's' : '') + ' de ' + fr(x.kcal) + ' kcal (' + fr(x.p) + ' g prot.)</p>'); }
+      } else for (const rec of res.recs) { const x = partOf(rec); const w = doubt({ kcal: rec.kcal, p: rec.p, c: rec.c, f: rec.f }, 'portion'); lines.push('<p style="margin:4px 0">' + (w.length ? '⚠️' : '✅') + ' <b>' + esc(rec.name) + '</b> : ' + rec.parts + ' part' + (rec.parts > 1 ? 's' : '') + ' de ' + fr(x.kcal) + ' kcal (' + fr(x.p) + ' g prot.)' + (w.length ? ' · à vérifier' : '') + '</p>'); }
     } catch (e) { lines.push('<p class="mute" style="margin:4px 0">❌ ' + esc(url.slice(0, 60)) + '… : ' + esc(e.message) + '</p>'); }
     show();
     if (queue.length) await new Promise(r => setTimeout(r, 4000));
@@ -837,6 +848,15 @@ $('recForm').onsubmit = e => {
     try { rec.start(); btn.classList.add('on'); btn.textContent = '⏹ Arrêter'; } catch { rec = null; }
   };
 })();
+
+/* ---------- remontée des erreurs vers le Journal du Google Sheet ---------- */
+let errCount = 0;
+function report(where, message) {
+  if (!S.cfg || errCount >= 5 || !navigator.onLine) return; errCount++;
+  fetch(S.cfg.url, { method: 'POST', body: JSON.stringify({ token: S.cfg.token, action: 'logError', where, message: String(message).slice(0, 300) + ' | ' + navigator.userAgent.slice(0, 80) }) }).catch(() => {});
+}
+addEventListener('error', e => report('erreur', (e.message || '') + ' @' + (e.lineno || '?')));
+addEventListener('unhandledrejection', e => report('promesse', e.reason && (e.reason.message || e.reason)));
 
 /* ---------- démarrage ---------- */
 route(); renderAll(); sync();
