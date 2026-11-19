@@ -140,6 +140,16 @@ nav a{font-size:11px}
 .ring{width:min(200px,52vw)}
 .ring .in b{font-size:44px}
 .claude{border:1px solid var(--mat)}
+.meal>div:first-child{flex:1 1 0;min-width:0;overflow-wrap:anywhere}
+.meal .k{flex:0 0 auto}
+.meal{flex-wrap:wrap;row-gap:0}
+.grid2{align-items:end}
+.meal .acts{flex:1 0 100%;display:flex;justify-content:flex-end;gap:4px;margin:2px -8px -6px 0}
+.meal .acts .x{min-height:30px;padding:2px 8px}
+.cd{flex:0 0 auto}.cd span{white-space:nowrap}
+header .row>div:first-child{min-width:0}
+html,body{max-width:100%;overflow-x:hidden}
+main,.card,.pane{min-width:0}
 .msg{padding:10px 12px;border-radius:14px;margin:8px 0;max-width:88%;white-space:pre-wrap;line-height:1.45}
 .msg.user{background:var(--mat);color:var(--on);margin-left:auto}
 .msg.assistant{background:#101013;border:1px solid var(--line)}
@@ -228,7 +238,7 @@ nav a{font-size:11px}
       <textarea id="recUrl" placeholder="https://jow.com/fr/recipes/…" autocomplete="off" style="min-height:60px"></textarea>
       <div class="grid2" style="margin-top:8px">
         <div><label for="recPortions">Portions commandées dans Jow</label><select id="recPortions"><option>1</option><option selected>2</option><option>3</option><option>4</option></select></div>
-        <div><label for="recParts">Tu les sépares en</label><select id="recParts"><option value="0" selected>Auto (conseillé)</option><option value="2">2 parts</option><option value="3">3 parts</option><option value="4">4 parts</option><option value="5">5 parts</option><option value="6">6 parts</option></select></div>
+        <div><label for="recParts">Tu les sépares en (Auto conseillé)</label><select id="recParts"><option value="0" selected>Auto</option><option value="2">2 parts</option><option value="3">3 parts</option><option value="4">4 parts</option><option value="5">5 parts</option><option value="6">6 parts</option></select></div>
       </div>
       <div class="btns" style="margin-top:10px"><button type="submit" id="recBtn">Importer</button></div>
     </form>
@@ -567,7 +577,7 @@ function renderToday() {
   const editForm = m => '<div class="meal" style="display:block"><label>Nom</label><input data-ef="name" value="' + esc(m.name) + '"><div class="grid4" style="margin-top:6px">' +
     [['kcal', 'Kcal'], ['p', 'Prot.'], ['c', 'Gluc.'], ['f', 'Lip.']].map(([k, l]) => '<div><label>' + l + '</label><input data-ef="' + k + '" type="number" inputmode="decimal" value="' + (+m[k] || 0) + '"></div>').join('') +
     '</div><div class="btns" style="margin-top:8px"><button data-esave="' + esc(m.id) + '">Enregistrer</button><button class="ghost" data-ecancel="1">Annuler</button></div></div>';
-  $('mealList').innerHTML = meals.length ? meals.map(m => m.id === renderToday.editing ? editForm(m) : '<div class="meal"><div>' + esc(m.name) + '<small>' + esc(m.at || '') + ' · P ' + fr(m.p) + ' · G ' + fr(m.c) + ' · L ' + fr(m.f) + (m.src === 'claude' ? ' · ajouté par Claude' : m.src === 'photo' ? ' · photo' : m.src === 'recette' ? ' · recette Jow' : '') + '</small></div><div class="k">' + fr(m.kcal) + ' kcal<br><button class="x" data-edit="' + esc(m.id) + '">modifier</button> <button class="x" data-del="' + esc(m.id) + '">supprimer</button></div></div>').join('')
+  $('mealList').innerHTML = meals.length ? meals.map(m => m.id === renderToday.editing ? editForm(m) : '<div class="meal"><div>' + esc(m.name) + '<small>' + esc(m.at || '') + ' · P ' + fr(m.p) + ' · G ' + fr(m.c) + ' · L ' + fr(m.f) + (m.src === 'claude' ? ' · ajouté par Claude' : m.src === 'photo' ? ' · photo' : m.src === 'recette' ? ' · recette Jow' : '') + '</small></div><div class="k">' + fr(m.kcal) + ' kcal</div><div class="acts"><button class="x" data-edit="' + esc(m.id) + '">modifier</button><button class="x" data-del="' + esc(m.id) + '">supprimer</button></div></div>').join('')
     : '<p class="mute">Rien pour l’instant. Ajoute ton repas, ou envoie une photo à Claude.</p>';
   for (const b of $('mealList').querySelectorAll('[data-edit]')) b.onclick = () => { renderToday.edit = renderToday.edit; renderToday.editing = b.dataset.edit; renderToday(); };
   for (const b of $('mealList').querySelectorAll('[data-ecancel]')) b.onclick = () => { renderToday.editing = null; renderToday(); };
