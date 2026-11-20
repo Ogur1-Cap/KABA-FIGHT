@@ -21,6 +21,7 @@ const FOODS = [
   ['Pizza', 260, 11, 30, 10, 300], ['Kebab (sandwich)', 230, 12, 22, 10, 350], ['Burger (fast-food)', 260, 13, 26, 11, 220]
 ];
 const $ = id => document.getElementById(id);
+const gramsOf = n => { const m = /\(\s*(\d+(?:[.,]\d+)?)\s*g\s*\)/i.exec(String(n || '')); return m ? parseFloat(m[1].replace(',', '.')) : 100; };
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const fr = (x, d = 0) => Number(x).toLocaleString('fr-FR', { minimumFractionDigits: d, maximumFractionDigits: d });
 const today = () => dstr(new Date());
@@ -137,10 +138,21 @@ function renderToday() {
   const meals = day.meals || [];
   const editForm = m => '<div class="meal" style="display:block"><label>Nom</label><input data-ef="name" value="' + esc(m.name) + '"><div class="grid4" style="margin-top:6px">' +
     [['kcal', 'Kcal'], ['p', 'Prot.'], ['c', 'Gluc.'], ['f', 'Lip.']].map(([k, l]) => '<div><label>' + l + '</label><input data-ef="' + k + '" type="number" inputmode="decimal" value="' + (+m[k] || 0) + '"></div>').join('') +
-    '</div><div class="btns" style="margin-top:8px"><button data-esave="' + esc(m.id) + '">Enregistrer</button><button class="ghost" data-ecancel="1">Annuler</button></div></div>';
+    '</div><div class="qty"><label>Tu en as mangé moins ou plus ? Les valeurs se recalculent seules.</label><div class="qrow"><span>Noté</span><input data-eq="from" type="number" inputmode="decimal" value="' + gramsOf(m.name) + '"><span>g → mangé</span><input data-eq="to" type="number" inputmode="decimal" placeholder="ex. 50"><span>g</span></div>' +
+    '<div class="qrow chips"><button type="button" class="x" data-eqf="0.25">¼</button><button type="button" class="x" data-eqf="0.5">½</button><button type="button" class="x" data-eqf="0.75">¾</button><button type="button" class="x" data-eqf="1.5">×1,5</button><button type="button" class="x" data-eqf="2">×2</button></div></div>' +
+    '<div class="btns" style="margin-top:8px"><button data-esave="' + esc(m.id) + '">Enregistrer</button><button class="ghost" data-ecancel="1">Annuler</button></div></div>';
   $('mealList').innerHTML = meals.length ? meals.map(m => m.id === renderToday.editing ? editForm(m) : '<div class="meal"><div>' + esc(m.name) + '<small>' + esc(m.at || '') + ' · P ' + fr(m.p) + ' · G ' + fr(m.c) + ' · L ' + fr(m.f) + (m.src === 'claude' ? ' · ajouté par Claude' : m.src === 'photo' ? ' · photo' : m.src === 'recette' ? ' · recette Jow' : '') + '</small></div><div class="k">' + fr(m.kcal) + ' kcal</div><div class="acts"><button class="x" data-edit="' + esc(m.id) + '">modifier</button><button class="x" data-del="' + esc(m.id) + '">supprimer</button></div></div>').join('')
     : '<p class="mute">Rien pour l’instant. Ajoute ton repas, ou envoie une photo à Claude.</p>';
   for (const b of $('mealList').querySelectorAll('[data-edit]')) b.onclick = () => { renderToday.edit = renderToday.edit; renderToday.editing = b.dataset.edit; renderToday(); };
+  const em = meals.find(x => x.id === renderToday.editing);
+  if (em) {
+    const L = $('mealList'), q = k => L.querySelector('[data-eq="' + k + '"]'), nb = x => parseFloat(String(x).replace(',', '.'));
+    const scale = r => { if (!(r > 0)) return; for (const k of ['kcal', 'p', 'c', 'f']) L.querySelector('[data-ef="' + k + '"]').value = Math.round((+em[k] || 0) * r);
+      const g = Math.round(nb(q('from').value) * r), n = L.querySelector('[data-ef="name"]');
+      if (g > 0) n.value = /\(\s*\d+(?:[.,]\d+)?\s*g\s*\)/i.test(em.name) ? em.name.replace(/\(\s*\d+(?:[.,]\d+)?\s*g\s*\)/i, '(' + g + ' g)') : em.name + ' (' + g + ' g)'; };
+    q('to').oninput = q('from').oninput = () => { const a = nb(q('from').value), b = nb(q('to').value); if (a > 0 && b > 0) scale(b / a); };
+    for (const b of L.querySelectorAll('[data-eqf]')) b.onclick = () => { const r = +b.dataset.eqf, a = nb(q('from').value); if (a > 0) q('to').value = Math.round(a * r); scale(r); };
+  }
   for (const b of $('mealList').querySelectorAll('[data-ecancel]')) b.onclick = () => { renderToday.editing = null; renderToday(); };
   for (const b of $('mealList').querySelectorAll('[data-esave]')) b.onclick = () => {
     const m = meals.find(x => x.id === b.dataset.esave); if (!m) return;
