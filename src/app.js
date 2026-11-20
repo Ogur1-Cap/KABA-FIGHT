@@ -141,7 +141,9 @@ function renderToday() {
     '</div><div class="qty"><label>Tu en as mangé moins ou plus ? Les valeurs se recalculent seules.</label><div class="qrow"><span>Noté</span><input data-eq="from" type="number" inputmode="decimal" value="' + gramsOf(m.name) + '"><span>g → mangé</span><input data-eq="to" type="number" inputmode="decimal" placeholder="ex. 50"><span>g</span></div>' +
     '<div class="qrow chips"><button type="button" class="x" data-eqf="0.25">¼</button><button type="button" class="x" data-eqf="0.5">½</button><button type="button" class="x" data-eqf="0.75">¾</button><button type="button" class="x" data-eqf="1.5">×1,5</button><button type="button" class="x" data-eqf="2">×2</button></div></div>' +
     '<div class="btns" style="margin-top:8px"><button data-esave="' + esc(m.id) + '">Enregistrer</button><button class="ghost" data-ecancel="1">Annuler</button></div></div>';
-  $('mealList').innerHTML = meals.length ? meals.map(m => m.id === renderToday.editing ? editForm(m) : '<div class="meal"><div>' + esc(m.name) + '<small>' + esc(m.at || '') + ' · P ' + fr(m.p) + ' · G ' + fr(m.c) + ' · L ' + fr(m.f) + (m.src === 'claude' ? ' · ajouté par Claude' : m.src === 'photo' ? ' · photo' : m.src === 'recette' ? ' · recette Jow' : '') + '</small></div><div class="k">' + fr(m.kcal) + ' kcal</div><div class="acts"><button class="x" data-edit="' + esc(m.id) + '">modifier</button><button class="x" data-del="' + esc(m.id) + '">supprimer</button></div></div>').join('')
+  $('mealList').innerHTML = meals.length ? (renderToday.group ? groupPanel(meals) : '') + meals.map(m => m.id === renderToday.editing ? editForm(m) : '<div class="meal' + (renderToday.group && renderToday.group.has(m.id) ? ' picked' : '') + '" data-mid="' + esc(m.id) + '">' + (meals.length > 1 ? '<span class="grip" data-grip="' + esc(m.id) + '" aria-label="Glisser sur un autre aliment pour former un plat">⋮⋮</span>' : '') + '<div>' + esc(m.name) + '<small>' + esc(m.at || '') + ' · P ' + fr(m.p) + ' · G ' + fr(m.c) + ' · L ' + fr(m.f) + (m.src === 'claude' ? ' · ajouté par Claude' : m.src === 'photo' ? ' · photo' : m.src === 'recette' ? ' · recette Jow' : '') + '</small></div><div class="k">' + fr(m.kcal) + ' kcal</div><div class="acts">' + (renderToday.group ? '<button class="x" data-gpick="' + esc(m.id) + '">' + (renderToday.group.has(m.id) ? '✓ dans le plat' : '+ ajouter au plat') + '</button>' :
+      (groupsLS()[m.id] ? '<button class="x" data-ungroup="' + esc(m.id) + '">dégrouper</button>' : '') + '<button class="x" data-edit="' + esc(m.id) + '">modifier</button><button class="x" data-del="' + esc(m.id) + '">supprimer</button>') + '</div></div>').join('') +
+      (meals.length > 1 && !renderToday.group ? '<p class="mute" style="font-size:13px;margin:8px 0 0">Astuce : glisse un aliment par sa poignée ⋮⋮ sur un autre pour en faire un plat, ou <button class="x" id="groupStart" style="padding:0;min-height:0">choisis-les ici</button>.</p>' : '')
     : '<p class="mute">Rien pour l’instant. Ajoute ton repas, ou envoie une photo à Claude.</p>';
   for (const b of $('mealList').querySelectorAll('[data-edit]')) b.onclick = () => { renderToday.edit = renderToday.edit; renderToday.editing = b.dataset.edit; renderToday(); };
   const em = meals.find(x => x.id === renderToday.editing);
@@ -153,6 +155,7 @@ function renderToday() {
     q('to').oninput = q('from').oninput = () => { const a = nb(q('from').value), b = nb(q('to').value); if (a > 0 && b > 0) scale(b / a); };
     for (const b of L.querySelectorAll('[data-eqf]')) b.onclick = () => { const r = +b.dataset.eqf, a = nb(q('from').value); if (a > 0) q('to').value = Math.round(a * r); scale(r); };
   }
+  wireGroup(meals, t);
   for (const b of $('mealList').querySelectorAll('[data-ecancel]')) b.onclick = () => { renderToday.editing = null; renderToday(); };
   for (const b of $('mealList').querySelectorAll('[data-esave]')) b.onclick = () => {
     const m = meals.find(x => x.id === b.dataset.esave); if (!m) return;
@@ -283,6 +286,82 @@ $('setForm').onsubmit = e => {
 };
 $('typeBtn').onclick = () => { const t = today(); push({ action: 'setType', date: t, type: isTrain(S.p, t, S.days) ? 'repos' : 'boxe' }); };
 
+/* ---------- regrouper des aliments en un plat ---------- */
+const groupsLS = () => LS.get('groups', {}) || {};
+// Nom de plat « intelligent » : base (pâtes, riz…) + garnitures reconnues, sinon liste des aliments
+const DISH_BASES = [[/spaghetti|tagliatelle|penne|fusilli|linguine|macaroni|coquillette|farfalle|p[âa]tes?\b/i, 'Pâtes'], [/gnocchi/i, 'Gnocchis'], [/raviol/i, 'Ravioles'], [/\briz\b|risotto/i, 'Riz'], [/semoule|couscous/i, 'Semoule'], [/quinoa/i, 'Quinoa'], [/boulgour/i, 'Boulgour'], [/pommes? de terre|patate|pur[ée]e/i, 'Pommes de terre'], [/frites/i, 'Frites'], [/wrap|tortilla/i, 'Wrap'], [/burger/i, 'Burger'], [/pizza/i, 'Pizza'], [/\bpain\b|baguette|toast|sandwich/i, 'Sandwich'], [/salade|laitue|roquette|m[âa]che/i, 'Salade'], [/omelette|[œoe]ufs?\b/i, 'Omelette'], [/porridge|flocons d.avoine|avoine/i, 'Porridge'], [/skyr|fromage blanc|yaourt/i, 'Bol']];
+const DISH_TOPS = [[/pesto/i, 'au pesto'], [/carbonara/i, 'à la carbonara'], [/bolo/i, 'à la bolognaise'], [/sauce tomate|coulis|tomate/i, 'à la tomate'], [/poulet|dinde/i, 'au poulet'], [/thon/i, 'au thon'], [/saumon/i, 'au saumon'], [/jambon/i, 'au jambon'], [/lardon|bacon|\blard\b/i, 'aux lardons'], [/b[œoe]uf|steak|hach[ée]/i, 'au bœuf'], [/chorizo/i, 'au chorizo'], [/crevette/i, 'aux crevettes'], [/champignon/i, 'aux champignons'], [/cr[èe]me/i, 'à la crème'], [/curry/i, 'au curry'], [/parmesan|grana|parmigiano/i, 'au parmesan'], [/mozza/i, 'à la mozzarella'], [/ch[èe]vre/i, 'au chèvre'], [/emmental|gruy[èe]re|comt[ée]|cheddar|raclette|fromage/i, 'au fromage'], [/[œoe]ufs?\b/i, 'à l’œuf'], [/l[ée]gume|ratatouille|courgette|brocoli|[ée]pinard|poivron/i, 'aux légumes'], [/banane/i, 'à la banane'], [/miel/i, 'au miel'], [/fruits? rouges|myrtille|fraise|framboise/i, 'aux fruits rouges'], [/whey|prot[ée]ine/i, 'protéiné']];
+function dishName(names) {
+  const clean = n => String(n).replace(/\s*\([^)]*\)/g, '').trim();
+  const all = names.map(clean).join(' | ');
+  const base = DISH_BASES.find(([re]) => re.test(all));
+  const tops = [];
+  for (const [re, lab] of DISH_TOPS) if (re.test(all) && !tops.includes(lab) && !(base && base[1] === 'Omelette' && lab === 'à l’œuf') && !(lab === 'au fromage' && tops.includes('au parmesan'))) tops.push(lab);
+  if (!base && !tops.length) return names.map(clean).join(' + ');
+  let n = base ? base[1] : clean(names[0]);
+  const t = tops.slice(0, 2).map((x, i) => i === 0 ? x : x.replace(/^(au|à la|à l’|aux)\s*/, ''));
+  if (t.length) n += ' ' + t[0] + (t[1] ? ' et ' + t[1] : '');
+  return n.charAt(0).toUpperCase() + n.slice(1);
+}
+function groupPanel(meals) {
+  const g = meals.filter(m => renderToday.group.has(m.id)), sum = k => g.reduce((a, m) => a + (+m[k] || 0), 0);
+  if (!renderToday.groupNameTouched) renderToday.groupName = g.length ? dishName(g.map(m => m.name)) : '';
+  return '<div class="grp" id="grpPanel"><b>Composer un plat</b><p class="mute" style="margin:4px 0 8px;font-size:13px">' + (g.length < 2 ? 'Choisis au moins 2 aliments (« + ajouter au plat », ou glisse-les ici).' : g.length + ' aliments · ' + fr(sum('kcal')) + ' kcal · P ' + fr(sum('p')) + ' · G ' + fr(sum('c')) + ' · L ' + fr(sum('f'))) + '</p>' +
+    '<label for="grpName">Nom du plat (proposé automatiquement, modifiable)</label><input id="grpName" value="' + esc(renderToday.groupName || '') + '">' +
+    '<div class="btns" style="margin-top:8px"><button id="grpOk"' + (g.length < 2 ? ' disabled' : '') + '>Créer le plat</button><button class="ghost" id="grpCancel">Annuler</button></div></div>';
+}
+function makeDish(meals, t) {
+  const g = meals.filter(m => renderToday.group.has(m.id)); if (g.length < 2) return;
+  const sum = k => Math.round(g.reduce((a, m) => a + (+m[k] || 0), 0));
+  const name = ($('grpName').value || '').trim() || dishName(g.map(m => m.name));
+  const ats = g.map(m => m.at).filter(Boolean).sort();
+  const dish = { id: 'm' + Date.now(), date: t, at: ats[0] || '', name: name, kcal: sum('kcal'), p: sum('p'), c: sum('c'), f: sum('f'), src: 'appli' };
+  const gs = groupsLS(); gs[dish.id] = g.map(m => ({ ...m, date: t })); LS.set('groups', gs);
+  renderToday.group = null; renderToday.groupNameTouched = false;
+  for (const m of g) push({ action: 'delMeal', id: m.id });
+  push({ action: 'addMeal', meal: dish });
+  toast('Plat créé : ' + name);
+}
+function wireGroup(meals, t) {
+  const L = $('mealList'), R = () => renderToday();
+  if ($('groupStart')) $('groupStart').onclick = () => { renderToday.group = new Set(); renderToday.groupNameTouched = false; R(); };
+  for (const b of L.querySelectorAll('[data-gpick]')) b.onclick = () => { const g = renderToday.group, id = b.dataset.gpick; g.has(id) ? g.delete(id) : g.add(id); R(); };
+  if ($('grpName')) $('grpName').oninput = e => { renderToday.groupName = e.target.value; renderToday.groupNameTouched = true; };
+  if ($('grpCancel')) $('grpCancel').onclick = () => { renderToday.group = null; renderToday.groupNameTouched = false; R(); };
+  if ($('grpOk')) $('grpOk').onclick = () => makeDish(meals, t);
+  for (const b of L.querySelectorAll('[data-ungroup]')) b.onclick = () => {
+    const gs = groupsLS(), parts = gs[b.dataset.ungroup]; if (!parts) return;
+    push({ action: 'delMeal', id: b.dataset.ungroup });
+    parts.forEach((m, i) => push({ action: 'addMeal', meal: { ...m, id: 'm' + (Date.now() + i), date: t } }));
+    delete gs[b.dataset.ungroup]; LS.set('groups', gs); toast('Plat dégroupé');
+  };
+  // Glisser-déposer (doigt ou souris) par la poignée ⋮⋮
+  for (const h of L.querySelectorAll('[data-grip]')) h.onpointerdown = e => {
+    e.preventDefault();
+    const row = h.closest('.meal'), id = h.dataset.grip, y0 = e.clientY, x0 = e.clientX;
+    row.classList.add('dragging'); try { h.setPointerCapture(e.pointerId); } catch (_) {}
+    let over = null;
+    // cible = le plat en cours ou l'aliment situé à la hauteur du doigt (peu importe la position horizontale)
+    const find = (x, y) => [$('grpPanel'), ...L.querySelectorAll('.meal[data-mid]')].find(el => el && el !== row && (r => y >= r.top && y <= r.bottom)(el.getBoundingClientRect())) || null;
+    h.onpointermove = ev => {
+      row.style.transform = 'translate(' + Math.round((ev.clientX - x0) * 0.3) + 'px,' + Math.round(ev.clientY - y0) + 'px)';
+      const o = find(ev.clientX, ev.clientY), ok = o && o !== row ? o : null;
+      if (over !== ok) { if (over) over.classList.remove('dropok'); over = ok; if (over) over.classList.add('dropok'); }
+    };
+    const end = () => {
+      h.onpointermove = h.onpointerup = h.onpointercancel = null;
+      row.classList.remove('dragging'); row.style.transform = '';
+      if (!over) return;
+      over.classList.remove('dropok');
+      const tid = over.id === 'grpPanel' ? null : over.dataset.mid;
+      if (!renderToday.group) { renderToday.group = new Set(); renderToday.groupNameTouched = false; }
+      renderToday.group.add(id); if (tid) renderToday.group.add(tid);
+      if (navigator.vibrate) navigator.vibrate(15);
+      R();
+    };
+    h.onpointerup = end; h.onpointercancel = end;
+  };
+}
 /* ---------- verdict de pesée, mot de Claude, ajustement automatique ---------- */
 function verdictHtml(v) {
   if (!v) return '';

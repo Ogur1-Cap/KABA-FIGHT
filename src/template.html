@@ -57,7 +57,7 @@ nav a{font-size:11px}
 .ring{width:min(200px,52vw)}
 .ring .in b{font-size:44px}
 .claude{border:1px solid var(--mat)}
-.meal>div:first-child{flex:1 1 0;min-width:0;overflow-wrap:anywhere}
+.meal>div:first-of-type{flex:1 1 0;min-width:0;overflow-wrap:anywhere}
 .meal .k{flex:0 0 auto}
 .meal{flex-wrap:wrap;row-gap:0}
 #recForm .grid2{align-items:end}
@@ -76,6 +76,12 @@ main,.card,.pane{min-width:0}
 .qty label{margin-bottom:6px}.qrow{display:flex;align-items:center;gap:5px;flex-wrap:wrap}
 .qrow input{width:62px;flex:0 0 62px;padding-left:8px;padding-right:8px}.qrow span{color:var(--mute);font-size:14px}
 .qrow.chips{margin-top:6px}.qrow.chips .x{text-decoration:none;border:1px solid var(--line);border-radius:8px;min-width:44px;min-height:36px}
+.meal .grip{flex:0 0 auto;align-self:flex-start;width:22px;margin:2px 0 0 -6px;padding:4px 0;color:var(--mute);font-size:18px;letter-spacing:-3px;text-align:center;cursor:grab;touch-action:none;user-select:none;-webkit-user-select:none}
+.meal.dragging{position:relative;z-index:5;background:var(--card);box-shadow:0 8px 24px rgba(0,0,0,.6);border-radius:10px;opacity:.95}
+.meal.dropok,.grp.dropok{outline:2px dashed var(--mat);outline-offset:2px;border-radius:10px;background:var(--mat2)}
+.meal.picked{background:var(--mat2);border-radius:10px;padding-left:6px;padding-right:6px}
+.grp{margin:4px 0 10px;padding:12px;border:1px solid var(--mat);border-radius:12px}
+.grp b{font-size:16px}
 .msg{padding:10px 12px;border-radius:14px;margin:8px 0;max-width:88%;white-space:pre-wrap;line-height:1.45}
 .msg.user{background:var(--mat);color:var(--on);margin-left:auto}
 .msg.assistant{background:#101013;border:1px solid var(--line)}
