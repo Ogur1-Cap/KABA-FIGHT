@@ -4,13 +4,22 @@
  * (Exécuter en tant que : moi ; Qui a accès : tout le monde).
  *
  * TOKEN : clé privée partagée avec l'appli. Ne la publie pas.
+ * Les clés sont mémorisées dans les Propriétés du script dès la première utilisation :
+ * aux prochaines mises à jour, tu pourras coller le script tel quel, sans remettre tes clés.
  */
-const TOKEN = 'A_REMPLACER';
+const TOKEN = cle_('TOKEN', 'A_REMPLACER');
 const TZ = 'Europe/Paris';
 // Analyse des repas en photo : clé API Gemini gratuite (aistudio.google.com > Get API key). Ne la publie pas.
-const GEMINI_KEY = 'A_REMPLACER';
+const GEMINI_KEY = cle_('GEMINI_KEY', 'A_REMPLACER');
 const GEMINI_MODELS = ['gemini-flash-lite-latest', 'gemini-flash-latest']; // le modèle léger d'abord : bien plus rapide, suffisant pour estimer un repas // complétés automatiquement par la liste des modèles disponibles
 const GEMINI_MAX_PAR_JOUR = 80; // garde-fou : au-delà, les analyses sont refusées jusqu'au lendemain
+
+// Lit une clé : la valeur écrite dans le script si elle est renseignée (et on la mémorise), sinon celle mémorisée
+function cle_(nom, valeur) {
+  const pr = PropertiesService.getScriptProperties();
+  if (valeur && valeur !== 'A_REMPLACER') { if (pr.getProperty(nom) !== valeur) pr.setProperty(nom, valeur); return valeur; }
+  return pr.getProperty(nom) || valeur;
+}
 
 function doGet(e) {
   const p = e.parameter || {};
@@ -123,7 +132,10 @@ function readAll() {
   }
   const adj = rows(ss.getSheetByName('Ajustements')).filter(r => r[0]).map(r => ({ date: day(r[0]), oldTrain: r[1], oldRest: r[2], train: r[3], rest: r[4], tdee: r[5], source: r[6] }));
   const recipes = rows(recSheet()).filter(r => r[0]).map(r => ({ id: String(r[0]), name: String(r[1]), url: String(r[2]), portions: +r[3] || 2, parts: +r[4] || 2, kcal: +r[5] || 0, p: +r[6] || 0, c: +r[7] || 0, f: +r[8] || 0, ingredients: String(r[9]), added: day(r[10]), eaten: +r[11] || 0, status: String(r[12] || 'en cours') }));
-  return { profile, days, adj, recipes, at: new Date().toISOString() };
+  // Mots de Claude (onglet « Claude » : Date, Heure, Message), écrits par sa tâche planifiée : les 5 derniers
+  const csh = ss.getSheetByName('Claude');
+  const claude = csh ? rows(csh).filter(r => r[0] && r[2]).slice(-5).map(r => ({ date: day(r[0]), time: String(r[1] || ''), at: day(r[0]) + ' ' + String(r[1] || ''), text: String(r[2]) })) : [];
+  return { profile, days, adj, recipes, claude, at: new Date().toISOString() };
 }
 
 const PROMPT = `Tu es nutritionniste du sport et tu aides un boxeur de 26 ans en perte de poids avant une compétition.
@@ -225,7 +237,7 @@ function gemini(parts, opt) {
   props.setProperty(k, String(used + 1));
   // Pas de « sortie JSON imposée » ni de réglage de réflexion : cette combinaison fait parfois bloquer Gemini
   // indéfiniment (incidents signalés sur le forum Google). On demande du JSON dans la consigne et on l'extrait du texte.
-  const cfg = json ? { temperature: 0.2, maxOutputTokens: 2500 } : { temperature: 0.6, maxOutputTokens: 700 };
+  const cfg = json ? { temperature: 0.2, maxOutputTokens: 2500 } : { temperature: 0.6, maxOutputTokens: 4000 }; // large : la réflexion de Gemini consomme aussi ce budget (sinon réponses coupées)
   const base = { contents: opt.contents || [{ parts }] };
   if (opt.system) base.systemInstruction = { parts: [{ text: opt.system }] };
   const body = Object.assign({}, base, { generationConfig: cfg });
@@ -240,8 +252,8 @@ function gemini(parts, opt) {
       if (code === 200) {
         const j = JSON.parse(r.getContentText());
         LAST_TOKENS = (j.usageMetadata && j.usageMetadata.totalTokenCount) || 0;
-        const txt = j.candidates[0].content.parts.map(x => x.text || '').join('');
-        if (!json) return txt.trim();
+        const cand = j.candidates[0], txt = ((cand.content && cand.content.parts) || []).map(x => x.text || '').join('');
+        if (!json) return txt.trim() + (cand.finishReason === 'MAX_TOKENS' ? ' […]' : '');
         const a = txt.indexOf('{'), z = txt.lastIndexOf('}');
         if (a < 0 || z < a) throw new Error('réponse illisible');
         return JSON.parse(txt.slice(a, z + 1));

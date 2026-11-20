@@ -34,8 +34,8 @@ const LS = {
   get(k, d) { try { const v = localStorage.getItem('kaba.' + k); return v ? JSON.parse(v) : d; } catch { return d; } },
   set(k, v) { try { localStorage.setItem('kaba.' + k, JSON.stringify(v)); } catch {} }
 };
-const S = { p: { ...DEFAULT }, days: {}, adj: [], recipes: [], cfg: LS.get('cfg', null), outbox: LS.get('outbox', []), syncing: false, lastSync: null };
-(function loadCache() { const c = LS.get('cache', null); if (c) { S.p = { ...DEFAULT, ...c.profile }; S.days = c.days || {}; S.adj = c.adj || []; S.recipes = c.recipes || []; S.lastSync = c.at; } })();
+const S = { p: { ...DEFAULT }, days: {}, adj: [], recipes: [], claude: [], cfg: LS.get('cfg', null), outbox: LS.get('outbox', []), syncing: false, lastSync: null };
+(function loadCache() { const c = LS.get('cache', null); if (c) { S.p = { ...DEFAULT, ...c.profile }; S.days = c.days || {}; S.adj = c.adj || []; S.recipes = c.recipes || []; S.claude = c.claude || []; S.lastSync = c.at; } })();
 
 function applyLocal(op) {
   const d = op.date && (S.days[op.date] || (S.days[op.date] = { date: op.date, meals: [] }));
@@ -48,17 +48,19 @@ function applyLocal(op) {
   else if (op.action === 'setRecipe') S.recipes = [...S.recipes.filter(r => r.id !== op.recipe.id), op.recipe];
   else if (op.action === 'delRecipe') S.recipes = S.recipes.filter(r => r.id !== op.id);
 }
-function saveCache() { LS.set('cache', { profile: S.p, days: S.days, adj: S.adj, recipes: S.recipes, at: S.lastSync }); }
+function saveCache() { LS.set('cache', { profile: S.p, days: S.days, adj: S.adj, recipes: S.recipes, claude: S.claude, at: S.lastSync }); }
 function push(op) {
   applyLocal(op); S.outbox.push(op); LS.set('outbox', S.outbox); saveCache(); renderAll(); sync();
+  if (op.action === 'setWeight') setTimeout(autoAdjust, 0);
 }
 function setData(data) {
   S.p = { ...DEFAULT, ...data.profile }; S.days = data.days || {}; S.adj = (data.adj || []).slice().reverse();
   // Si le script Google est ancien, il ne renvoie pas le statut des recettes : on garde celui du téléphone
   const prev = new Map(S.recipes.map(r => [r.id, r]));
   S.recipes = (data.recipes || []).map(r => ('status' in r) ? r : { ...r, status: (prev.get(r.id) || {}).status || 'en cours', eaten: (prev.get(r.id) || {}).eaten || 0 });
+  if (Array.isArray(data.claude)) S.claude = data.claude;
   for (const op of S.outbox) applyLocal(op);
-  S.lastSync = data.at; saveCache(); renderAll();
+  S.lastSync = data.at; saveCache(); renderAll(); autoAdjust();
 }
 async function sync() {
   if (!S.cfg || S.syncing) return;
@@ -115,13 +117,14 @@ function renderToday() {
   $('ringSub').textContent = fr(tot.kcal) + ' / ' + fr(tg.kcal) + ' kcal';
   const bar = (cls, lab, v, g) => '<div class="bar ' + cls + '"><div class="t"><span>' + lab + '</span><span>' + fr(v) + ' / ' + fr(g) + ' g</span></div><div class="tr"><i style="width:' + Math.round(clamp(v / g, 0, 1) * 100) + '%"></i></div></div>';
   $('macroBars').innerHTML = bar('p', 'Protéines', tot.p, tg.p) + bar('', 'Glucides', tot.c, tg.c) + bar('f', 'Lipides', tot.f, tg.f);
-  const cur = current(p, S.days, t), plan = planWeight(p, t);
+  renderClaudeNote();
+  const cur = current(p, S.days, t), plan = planWeight(p, t, S.days);
   if (typeof day.weight === 'number' && !renderToday.edit) {
     const gap = cur.est - plan;
     $('weighBox').innerHTML = '<div class="weigh"><span class="big">' + fr(day.weight, 1) + ' kg</span><button class="x" id="wEdit">modifier</button></div>' +
       '<p class="mute" style="margin:6px 0 0">Poids lissé ' + fr(cur.est, 1) + ' kg · trajectoire ' + fr(plan, 1) + ' kg · ' +
       (Math.abs(gap) < 0.15 ? 'pile dans les temps' : gap < 0 ? fr(-gap, 1) + ' kg d’avance' : fr(gap, 1) + ' kg de retard') +
-      ' · reste ' + fr(Math.max(0, cur.est - p.targetMorning), 1) + ' kg</p>';
+      ' · reste ' + fr(Math.max(0, cur.est - p.targetMorning), 1) + ' kg</p>' + verdictHtml(weighVerdict(p, S.days, t));
     $('wEdit').onclick = () => { renderToday.edit = true; renderToday(); };
   } else {
     $('weighBox').innerHTML = '<form class="weigh" id="wForm"><input id="wIn" type="number" step="0.1" min="40" max="150" inputmode="decimal" placeholder="Ex. 76,3" style="flex:1 1 140px" value="' + (typeof day.weight === 'number' ? day.weight : '') + '"><button type="submit">Enregistrer</button></form><p class="mute" style="margin:6px 0 0">Le matin, à jeun, après être allé aux toilettes, toujours sur la même balance.</p>';
@@ -170,7 +173,7 @@ function renderChart() {
   const ser = trendSeries(p, S.days, t);
   const W = box.clientWidth, H = box.clientHeight; if (!W) return;
   const n = diffDays(p.startDate, end);
-  const ws = ser.flatMap(r => [r.w, r.trend]).filter(v => v != null).concat([p.startWeight, p.targetMorning, p.category]);
+  const ws = ser.flatMap(r => [r.w, r.trend]).filter(v => v != null).concat([startPoint(p, S.days).w, p.targetMorning, p.category]);
   const lo = Math.floor(Math.min(...ws) - 0.5), hi = Math.ceil(Math.max(...ws) + 0.5);
   const L = 38, R = 10, T = 12, B = 26;
   const x = d => L + (W - L - R) * diffDays(p.startDate, d) / Math.max(1, n);
@@ -180,7 +183,7 @@ function renderChart() {
   g += '<line x1="' + L + '" x2="' + (W - R) + '" y1="' + y(p.category) + '" y2="' + y(p.category) + '" stroke="var(--glove)" stroke-dasharray="2 4"/><text x="' + (W - R) + '" y="' + (y(p.category) - 4) + '" text-anchor="end" font-size="11" fill="var(--glove)">catégorie ' + p.category + ' kg</text>';
   const step = W < 520 ? 7 : 3;
   for (let i = 0; i <= n; i += step) { const d = addDays(p.startDate, i), pd = parse(d); g += '<text x="' + x(d) + '" y="' + (H - 8) + '" text-anchor="middle" font-size="11" fill="var(--mute)">' + pd.getDate() + '/' + (pd.getMonth() + 1) + '</text>'; }
-  const planPts = []; for (let i = 0; i <= n; i++) { const d = addDays(p.startDate, i); planPts.push(x(d) + ',' + y(planWeight(p, d))); }
+  const planPts = []; for (let i = 0; i <= n; i++) { const d = addDays(p.startDate, i); planPts.push(x(d) + ',' + y(planWeight(p, d, S.days))); }
   g += '<polyline points="' + planPts.join(' ') + '" fill="none" stroke="var(--silver)" stroke-width="2" stroke-dasharray="6 5"/>';
   g += ser.filter(r => r.w != null).map(r => '<circle cx="' + x(r.date) + '" cy="' + y(r.w) + '" r="3.5" fill="var(--mute)"/>').join('');
   const tr = ser.filter(r => r.trend != null).map(r => x(r.date) + ',' + y(r.trend));
@@ -190,7 +193,7 @@ function renderChart() {
 }
 function renderCourbe() {
   const p = S.p, t = today(), cur = current(p, S.days, t), ser = cur.ser;
-  const lost = p.startWeight - cur.est, plan = planWeight(p, t), gap = cur.est - plan;
+  const lost = startPoint(p, S.days).w - cur.est, plan = planWeight(p, t, S.days), gap = cur.est - plan;
   $('trendTitle').textContent = lost > 0.05 ? fr(lost, 1) + ' kg de perdus depuis le ' + fdate(p.startDate) : 'Ta tendance';
   $('trendSub').textContent = 'Poids lissé ' + fr(cur.est, 1) + ' kg, trajectoire ' + fr(plan, 1) + ' kg : ' + (Math.abs(gap) < 0.15 ? 'tu es dans les temps.' : gap < 0 ? 'tu as ' + fr(-gap, 1) + ' kg d’avance.' : 'tu as ' + fr(gap, 1) + ' kg de retard.');
   renderChart();
@@ -200,21 +203,22 @@ function renderCourbe() {
 function renderCoach() {
   const p = S.p, t = today(), pr = proposal(p, S.days, t);
   const same = Math.abs(pr.train - p.kcalTrain) < 50 && Math.abs(pr.rest - p.kcalRest) < 50;
+  const nW = Object.keys(S.days).filter(k => k >= p.startDate && typeof S.days[k].weight === 'number').length;
   const past = t >= fwStart(p);
   $('weekCard').innerHTML = '<h2>Bilan et ajustement</h2>' +
     '<div class="grid2"><div><label>Dépense estimée</label><b class="num" style="font-size:28px">' + fr(pr.tdee.value) + '</b> kcal<div class="mute">' + (pr.tdee.source === 'formule' ? 'Calcul de base (pas encore assez de données : ' + pr.tdee.n + '/4 jours notés).' : 'D’après tes ' + pr.tdee.n + ' derniers jours notés.') + '</div></div>' +
-    '<div><label>Rythme visé</label><b class="num" style="font-size:28px">' + fr(pr.rate, 2) + '</b> kg/sem.<div class="mute">Pour atteindre ' + fr(p.fwTarget, 1) + ' kg de poids lissé le ' + fdate(fwStart(p)) + '.</div></div></div>' +
+    (pr.mode === 'maintien' ? '<div><label>Rythme visé</label><b class="num" style="font-size:28px">MAINTIEN</b><div class="mute">Tendance ' + fr(pr.trend, 1) + ' kg, objectif ' + fr(p.fwTarget, 1) + ' kg le ' + fdate(fwStart(p)) + ' atteint.</div></div></div>' : '<div><label>Rythme visé</label><b class="num" style="font-size:28px">' + fr(pr.rate, 2) + '</b> kg/sem.<div class="mute">Pour atteindre ' + fr(p.fwTarget, 1) + ' kg de poids lissé le ' + fdate(fwStart(p)) + '.</div></div></div>') +
     (past ? '<p class="mute">Semaine du combat : on ne change plus les calories, on suit la checklist.</p>' :
-     pr.tdee.source === 'formule' ? '<p class="mute" style="margin:12px 0 0">Je te proposerai un ajustement dès que j’aurai au moins 4 jours de pesées et de repas notés. D’ici là, garde ' + fr(p.kcalTrain) + ' kcal les jours de boxe et ' + fr(p.kcalRest) + ' kcal les jours de repos.</p>' :
-      '<p style="margin:12px 0 6px">Proposition : <b>' + fr(pr.train) + ' kcal</b> les jours de boxe, <b>' + fr(pr.rest) + ' kcal</b> les jours de repos <span class="mute">(actuel : ' + fr(p.kcalTrain) + ' / ' + fr(p.kcalRest) + ')</span>.</p>' +
-      (same ? '<p class="mute" style="margin:0">Tes objectifs actuels sont bons, rien à changer.</p>' : '<div class="btns"><button id="adjOk">Appliquer</button><button class="ghost" id="adjNo">Garder les miens</button></div>'));
+     nW < 4 ? '<p class="mute" style="margin:12px 0 0">Ajustement automatique dès 4 pesées (' + nW + '/4). D’ici là, garde ' + fr(p.kcalTrain) + ' kcal les jours de boxe et ' + fr(p.kcalRest) + ' kcal les jours de repos.</p>' :
+      '<p style="margin:12px 0 6px">' + (pr.mode === 'maintien' ? '<b style="color:var(--mat)">Mode maintien</b> : objectif atteint, tu manges à ta dépense pour rester autour de 75 kg. ' : '<b style="color:var(--mat)">Mode perte</b>. ') +
+      'Calcul du jour : <b>' + fr(pr.train) + ' kcal</b> boxe, <b>' + fr(pr.rest) + ' kcal</b> repos <span class="mute">(actuel : ' + fr(p.kcalTrain) + ' / ' + fr(p.kcalRest) + ')</span>.</p>' +
+      (same ? '<p class="mute" style="margin:0">Tes objectifs sont à jour.</p>' : '<p class="mute" style="margin:0 0 8px">Les objectifs s’ajustent tout seuls (écart d’au moins 100 kcal, au plus une fois tous les 3 jours)' + (S.adj[0] && S.adj[0].date > addDays(t, -3) ? ' : prochain ajustement possible ' + fdate(addDays(S.adj[0].date, 3)) : '') + '.</p><div class="btns"><button id="adjOk">Appliquer maintenant</button></div>'));
   if ($('adjOk')) {
     $('adjOk').onclick = () => {
       push({ action: 'addAdjust', adjust: { date: t, oldTrain: p.kcalTrain, oldRest: p.kcalRest, train: pr.train, rest: pr.rest, tdee: pr.tdee.value, source: pr.tdee.source } });
       push({ action: 'setProfile', profile: { kcalTrain: pr.train, kcalRest: pr.rest } });
       toast('Objectifs mis à jour');
     };
-    $('adjNo').onclick = () => toast('On garde tes objectifs');
   }
 }
 function renderReglages() {
@@ -267,6 +271,33 @@ $('setForm').onsubmit = e => {
 };
 $('typeBtn').onclick = () => { const t = today(); push({ action: 'setType', date: t, type: isTrain(S.p, t, S.days) ? 'repos' : 'boxe' }); };
 
+/* ---------- verdict de pesée, mot de Claude, ajustement automatique ---------- */
+function verdictHtml(v) {
+  if (!v) return '';
+  return '<div class="verdict ' + v.tone + '"><b>' + esc(v.title) + '</b>' + v.lines.map(l => '<p>' + esc(l) + '</p>').join('') +
+    (v.advice.length ? '<ul>' + v.advice.map(a => '<li>' + esc(a) + '</li>').join('') + '</ul>' : '') + '</div>';
+}
+function renderClaudeNote() {
+  const n = (S.claude || []).slice().sort((a, b) => String(a.at).localeCompare(String(b.at))).pop();
+  const box = $('claudeNote'); if (!box) return;
+  if (!n || !n.text || n.date < addDays(today(), -1)) { box.innerHTML = ''; box.hidden = true; return; }
+  box.hidden = false;
+  box.innerHTML = '<h2>Le mot de Claude <span class="mute" style="font-weight:400;font-size:13px">· ' + (n.date === today() ? 'aujourd’hui' : 'hier') + (n.time ? ' ' + esc(n.time) : '') + '</span></h2><div class="note">' + esc(n.text) + '</div>';
+}
+// Ajuste seul les objectifs (perte ou maintien) dès qu'il y a assez de pesées, au plus une fois tous les 3 jours
+function autoAdjust() {
+  const p = S.p, t = today();
+  if (!S.cfg || t >= fwStart(p)) return;
+  const nW = Object.keys(S.days).filter(k => k >= p.startDate && typeof S.days[k].weight === 'number').length;
+  if (nW < 4) return;
+  const last = S.adj[0];
+  if (last && last.date > addDays(t, -3)) return;
+  const pr = proposal(p, S.days, t);
+  if (Math.abs(pr.train - p.kcalTrain) < 100 && Math.abs(pr.rest - p.kcalRest) < 100) return;
+  push({ action: 'addAdjust', adjust: { date: t, oldTrain: p.kcalTrain, oldRest: p.kcalRest, train: pr.train, rest: pr.rest, tdee: pr.tdee.value, source: 'auto ' + pr.mode + ' (' + pr.tdee.source + ')' } });
+  push({ action: 'setProfile', profile: { kcalTrain: pr.train, kcalRest: pr.rest } });
+  setTimeout(() => toast((pr.mode === 'maintien' ? 'Mode maintien : ' : 'Objectifs ajustés : ') + fr(pr.train) + ' kcal boxe / ' + fr(pr.rest) + ' kcal repos'), 2800);
+}
 /* ---------- coach intégré (Gemini via le Google Sheet) ---------- */
 function context() {
   const p = S.p, t = today(), cur = current(p, S.days, t), pr = proposal(p, S.days, t), tg = targetFor(p, t, S.days), tt = totals(S.days[t]);
@@ -274,7 +305,7 @@ function context() {
   const meals = ((S.days[t] || {}).meals || []).map(m => m.name + ' ' + m.kcal + ' kcal ' + m.p + ' g prot.').join(' ; ') || 'rien noté';
   const recs = S.recipes.filter(r => r.status !== 'archivée').map(r => { const x = partOf(r); return r.name + ' : ' + left(r) + ' part(s) restante(s) de ' + x.kcal + ' kcal / ' + x.p + ' g prot.'; }).join('\n') || 'aucune';
   return 'Aujourd’hui ' + t + ' (' + (isTrain(p, t, S.days) ? 'jour de boxe' : 'jour de repos') + '), pesée de compétition le ' + p.competitionDate + ' (J-' + diffDays(t, p.competitionDate) + '), objectif ' + p.targetMorning + ' kg le matin, catégorie ' + p.category + ' kg.\n' +
-    'Profil : homme 26 ans, 1,76 m, boxe mardi 20-22h et jeudi 20h30-22h, travail assis.\nPoids lissé ' + cur.est.toFixed(1) + ' kg (départ ' + p.startWeight + ' kg le ' + p.startDate + ').\n' +
+    'Profil : homme 26 ans, 1,76 m, boxe mardi 20-22h et jeudi 20h30-22h, travail assis.\nPoids lissé ' + cur.est.toFixed(1) + ' kg (départ réel ' + startPoint(p, S.days).w + ' kg, moyenne des premières pesées).\n' +
     'Objectifs : ' + p.kcalTrain + ' kcal jour boxe / ' + p.kcalRest + ' kcal repos, ' + p.protein + ' g protéines, ' + p.fat + ' g lipides. Dépense estimée ' + pr.tdee.value + ' kcal (' + pr.tdee.source + ').\n' +
     'Aujourd’hui : ' + Math.round(tt.kcal) + '/' + tg.kcal + ' kcal, ' + Math.round(tt.p) + '/' + tg.p + ' g protéines. Repas : ' + meals + '\n' +
     'Recettes Jow en cours :\n' + recs + '\n14 derniers jours :\n' + last;
