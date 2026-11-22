@@ -82,6 +82,10 @@ main,.card,.pane{min-width:0}
 .meal.picked{background:var(--mat2);border-radius:10px;padding-left:6px;padding-right:6px}
 .grp{margin:4px 0 10px;padding:12px;border:1px solid var(--mat);border-radius:12px}
 .grp b{font-size:16px}
+.daytitle{display:flex;align-items:center;gap:6px}
+.daytitle .nav{min-height:34px;min-width:34px;padding:0 8px;font-size:20px;line-height:1}
+.daytitle .nav:disabled{opacity:.3}
+.past{border:1px solid var(--mat);background:var(--mat2);font-size:14px;padding:12px 14px}
 .msg{padding:10px 12px;border-radius:14px;margin:8px 0;max-width:88%;white-space:pre-wrap;line-height:1.45}
 .msg.user{background:var(--mat);color:var(--on);margin-left:auto}
 .msg.assistant{background:#101013;border:1px solid var(--line)}
@@ -104,9 +108,10 @@ main,.card,.pane{min-width:0}
   <div class="quick"><button id="quickMeal">＋ Ajouter un repas</button><button class="ghost" id="quickWeigh">⚖ Pesée</button></div>
   <div class="card claude" id="claudeNote" hidden></div>
   <div id="fwBanner"></div>
+  <div class="card past" id="pastBanner" hidden></div>
   <div class="card">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
-      <h2 id="todayTitle" style="margin:0">Aujourd'hui</h2>
+      <h2 id="todayTitle" class="daytitle" style="margin:0">Aujourd'hui</h2>
       <button class="ghost" id="typeBtn" style="min-height:36px;padding:6px 12px"></button>
     </div>
     <div class="ringwrap">

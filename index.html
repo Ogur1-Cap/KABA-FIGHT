@@ -165,6 +165,10 @@ main,.card,.pane{min-width:0}
 .meal.picked{background:var(--mat2);border-radius:10px;padding-left:6px;padding-right:6px}
 .grp{margin:4px 0 10px;padding:12px;border:1px solid var(--mat);border-radius:12px}
 .grp b{font-size:16px}
+.daytitle{display:flex;align-items:center;gap:6px}
+.daytitle .nav{min-height:34px;min-width:34px;padding:0 8px;font-size:20px;line-height:1}
+.daytitle .nav:disabled{opacity:.3}
+.past{border:1px solid var(--mat);background:var(--mat2);font-size:14px;padding:12px 14px}
 .msg{padding:10px 12px;border-radius:14px;margin:8px 0;max-width:88%;white-space:pre-wrap;line-height:1.45}
 .msg.user{background:var(--mat);color:var(--on);margin-left:auto}
 .msg.assistant{background:#101013;border:1px solid var(--line)}
@@ -187,9 +191,10 @@ main,.card,.pane{min-width:0}
   <div class="quick"><button id="quickMeal">＋ Ajouter un repas</button><button class="ghost" id="quickWeigh">⚖ Pesée</button></div>
   <div class="card claude" id="claudeNote" hidden></div>
   <div id="fwBanner"></div>
+  <div class="card past" id="pastBanner" hidden></div>
   <div class="card">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
-      <h2 id="todayTitle" style="margin:0">Aujourd'hui</h2>
+      <h2 id="todayTitle" class="daytitle" style="margin:0">Aujourd'hui</h2>
       <button class="ghost" id="typeBtn" style="min-height:36px;padding:6px 12px"></button>
     </div>
     <div class="ringwrap">
@@ -623,9 +628,15 @@ function renderHeader() {
 }
 let lastRemoved = null;
 function renderToday() {
-  const p = S.p, t = today(), day = S.days[t] || { meals: [] };
+  const p = S.p, t = viewDay(), day = S.days[t] || { meals: [] };
   const tg = targetFor(p, t, S.days), tot = totals(day), train = isTrain(p, t, S.days);
-  $('todayTitle').textContent = 'Aujourd’hui, ' + fdate(t);
+  const back = diffDays(t, today());
+  $('todayTitle').innerHTML = '<button class="ghost nav" id="dayPrev" aria-label="Jour précédent"' + (back >= 7 ? ' disabled' : '') + '>‹</button><span>' + (back === 0 ? 'Aujourd’hui' : back === 1 ? 'Hier' : back === 2 ? 'Avant-hier' : 'Le') + ', ' + fdate(t) + '</span>' + (back ? '<button class="ghost nav" id="dayNext" aria-label="Jour suivant">›</button>' : '');
+  $('pastBanner').hidden = !back;
+  $('pastBanner').innerHTML = back ? 'Tu complètes <b>' + dayLabel(t) + '</b> : les repas ajoutés ou modifiés ici iront sur ce jour. <button class="x" id="dayToday">Revenir à aujourd’hui</button>' : '';
+  $('dayPrev').onclick = () => { S.view = addDays(t, -1); renderToday(); };
+  if ($('dayNext')) $('dayNext').onclick = () => { S.view = addDays(t, 1); renderToday(); };
+  if ($('dayToday')) $('dayToday').onclick = () => { S.view = null; renderToday(); };
   $('typeBtn').innerHTML = train ? '<span class="chip box">Jour boxe</span>' : '<span class="chip">Jour repos</span>';
   $('typeBtn').setAttribute('aria-label', 'Changer le type de journée');
   const rem = tg.kcal - tot.kcal, ratio = clamp(tot.kcal / tg.kcal, 0, 1);
@@ -654,7 +665,7 @@ function renderToday() {
     };
   }
   const meals = day.meals || [];
-  const editForm = m => '<div class="meal" style="display:block"><label>Nom</label><input data-ef="name" value="' + esc(m.name) + '"><div class="grid4" style="margin-top:6px">' +
+  const editForm = m => '<div class="meal" style="display:block"><label>Nom</label><input data-ef="name" value="' + esc(m.name) + '"><label style="margin-top:6px">Mangé</label><select data-ef="date">' + dayOptions(t) + '</select><div class="grid4" style="margin-top:6px">' +
     [['kcal', 'Kcal'], ['p', 'Prot.'], ['c', 'Gluc.'], ['f', 'Lip.']].map(([k, l]) => '<div><label>' + l + '</label><input data-ef="' + k + '" type="number" inputmode="decimal" value="' + (+m[k] || 0) + '"></div>').join('') +
     '</div><div class="qty"><label>Tu en as mangé moins ou plus ? Les valeurs se recalculent seules.</label><div class="qrow"><span>Noté</span><input data-eq="from" type="number" inputmode="decimal" value="' + gramsOf(m.name) + '"><span>g → mangé</span><input data-eq="to" type="number" inputmode="decimal" placeholder="ex. 50"><span>g</span></div>' +
     '<div class="qrow chips"><button type="button" class="x" data-eqf="0.25">¼</button><button type="button" class="x" data-eqf="0.5">½</button><button type="button" class="x" data-eqf="0.75">¾</button><button type="button" class="x" data-eqf="1.5">×1,5</button><button type="button" class="x" data-eqf="2">×2</button></div></div>' +
@@ -679,10 +690,10 @@ function renderToday() {
     const m = meals.find(x => x.id === b.dataset.esave); if (!m) return;
     const v = k => $('mealList').querySelector('[data-ef="' + k + '"]').value;
     const num = k => Math.max(0, Math.round(parseFloat(String(v(k)).replace(',', '.')) || 0));
-    const upd = { ...m, date: t, name: v('name').trim() || m.name, kcal: num('kcal'), p: num('p'), c: num('c'), f: num('f') };
+    const nd = v('date') || t, upd = { ...m, date: nd, at: nd === t ? m.at : (m.at || ''), name: v('name').trim() || m.name, kcal: num('kcal'), p: num('p'), c: num('c'), f: num('f') };
     renderToday.editing = null;
     push({ action: 'delMeal', id: m.id }); push({ action: 'addMeal', meal: upd });
-    toast('Repas modifié');
+    toast(nd === t ? 'Repas modifié' : 'Repas déplacé ' + dayLabel(nd));
   };
   for (const b of $('mealList').querySelectorAll('[data-del]')) b.onclick = () => {
     const m = meals.find(x => x.id === b.dataset.del); if (!m) return;
@@ -802,7 +813,7 @@ $('setForm').onsubmit = e => {
   const prof = { kcalTrain: Math.round(num('sTrain', S.p.kcalTrain)), kcalRest: Math.round(num('sRest', S.p.kcalRest)), protein: Math.round(num('sProt', S.p.protein)), fat: Math.round(num('sFat', S.p.fat)), targetMorning: num('sTarget', S.p.targetMorning), competitionDate: $('sComp').value || S.p.competitionDate, trainingDays: days };
   document.activeElement.blur(); push({ action: 'setProfile', profile: prof }); toast('Objectifs enregistrés');
 };
-$('typeBtn').onclick = () => { const t = today(); push({ action: 'setType', date: t, type: isTrain(S.p, t, S.days) ? 'repos' : 'boxe' }); };
+$('typeBtn').onclick = () => { const t = viewDay(); push({ action: 'setType', date: t, type: isTrain(S.p, t, S.days) ? 'repos' : 'boxe' }); };
 
 /* ---------- regrouper des aliments en un plat ---------- */
 const groupsLS = () => LS.get('groups', {}) || {};
@@ -956,7 +967,7 @@ $('chatClear').onclick = () => { S.chat = []; LS.set('chat', S.chat); renderChat
 
 /* ---------- ajout de repas ---------- */
 let basket = [];
-function openSheet() { $('mealDay').innerHTML = dayOptions(today()); $('sheet').classList.add('on'); setMode('aliments'); basket = []; $('foodQ').value = ''; renderFoods(); renderBasket(); }
+function openSheet() { $('mealDay').innerHTML = dayOptions(viewDay()); $('sheet').classList.add('on'); setMode('aliments'); basket = []; $('foodQ').value = ''; renderFoods(); renderBasket(); }
 function closeSheet() { $('sheet').classList.remove('on'); }
 function setMode(m) {
   for (const b of $('shTabs').querySelectorAll('button')) b.classList.toggle('on', b.dataset.m === m);
@@ -1084,6 +1095,7 @@ function dayOptions(sel) {
   for (let i = 0; i < 8; i++) { const d = addDays(t, -i); h += '<option value="' + d + '"' + (d === sel ? ' selected' : '') + '>' + (i === 0 ? 'Aujourd’hui' : i === 1 ? 'Hier' : i === 2 ? 'Avant-hier' : fdate(d)) + '</option>'; }
   return h;
 }
+const viewDay = () => { const t = today(); return S.view && S.view < t && S.view >= addDays(t, -7) ? S.view : t; };
 const dayLabel = d => d === today() ? 'aujourd’hui' : d === addDays(today(), -1) ? 'hier' : d === addDays(today(), 1) ? 'demain' : 'le ' + fdate(d);
 
 /* ---------- contrôle de ce que renvoie Gemini ---------- */
