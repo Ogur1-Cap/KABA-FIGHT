@@ -404,8 +404,8 @@ function context() {
   return 'Aujourd’hui ' + t + ' (' + (isTrain(p, t, S.days) ? 'jour de boxe' : 'jour de repos') + '), pesée de compétition le ' + p.competitionDate + ' (J-' + diffDays(t, p.competitionDate) + '), objectif ' + p.targetMorning + ' kg le matin, catégorie ' + p.category + ' kg.\n' +
     'Profil : homme 26 ans, 1,76 m, boxe mardi 20-22h et jeudi 20h30-22h, travail assis.\nPoids lissé ' + cur.est.toFixed(1) + ' kg (départ réel ' + startPoint(p, S.days).w + ' kg, moyenne des premières pesées).\n' +
     'Objectifs : ' + p.kcalTrain + ' kcal jour boxe / ' + p.kcalRest + ' kcal repos, ' + p.protein + ' g protéines, ' + p.fat + ' g lipides. Dépense estimée ' + pr.tdee.value + ' kcal (' + pr.tdee.source + ').\n' +
-    'Aujourd’hui : ' + Math.round(tt.kcal) + '/' + tg.kcal + ' kcal, ' + Math.round(tt.p) + '/' + tg.p + ' g protéines. Repas : ' + meals + '\n' +
-    'Recettes Jow en cours :\n' + recs + '\n14 derniers jours :\n' + last;
+    'Aujourd’hui : ' + Math.round(tt.kcal) + '/' + tg.kcal + ' kcal, ' + Math.round(tt.p) + '/' + tg.p + ' g protéines. Reste : ' + Math.max(0, tg.kcal - Math.round(tt.kcal)) + ' kcal et ' + Math.max(0, tg.p - Math.round(tt.p)) + ' g protéines. Repas : ' + meals + '\n' +
+    'Recettes Jow en cours (valeurs exactes d’UNE part déjà calculées : ne les recalcule pas, additionne-les et vérifie que ta proposition ne dépasse pas le reste en kcal) :\n' + recs + '\n14 derniers jours :\n' + last;
 }
 S.chat = LS.get('chat', []);
 function renderChat() {
