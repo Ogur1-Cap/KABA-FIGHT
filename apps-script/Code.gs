@@ -102,7 +102,7 @@ function apply(op) {
     ss.getSheetByName('Ajustements').appendRow(["'" + a.date, a.oldTrain, a.oldRest, a.train, a.rest, a.tdee, a.source || '']);
   } else if (op.action === 'setRecipe') {
     const r = op.recipe, sh = recSheet(), row = findRow(sh, 1, r.id);
-    const vals = [r.id, r.name || '', r.url || '', +r.portions || 2, +r.parts || 2, +r.kcal || 0, +r.p || 0, +r.c || 0, +r.f || 0, r.ingredients || '', "'" + (r.added || ''), +r.eaten || 0, r.status || 'en cours'];
+    const vals = [r.id, r.name || '', r.url || '', +r.portions || 2, +r.parts || 2, +r.kcal || 0, +r.p || 0, +r.c || 0, +r.f || 0, r.ingredients || '', "'" + (r.added || ''), +r.eaten || 0, r.status || 'en cours', r.vsrc || ''];
     if (row) sh.getRange(row, 1, 1, vals.length).setValues([vals]); else sh.appendRow(vals);
   } else if (op.action === 'delRecipe') {
     const sh = recSheet(), row = findRow(sh, 1, op.id); if (row) sh.deleteRow(row);
@@ -131,7 +131,7 @@ function readAll() {
     days[k].meals.push({ id: String(id), at: String(at), name: String(name), kcal: +kcal || 0, p: +p || 0, c: +c || 0, f: +f || 0, src: String(src) });
   }
   const adj = rows(ss.getSheetByName('Ajustements')).filter(r => r[0]).map(r => ({ date: day(r[0]), oldTrain: r[1], oldRest: r[2], train: r[3], rest: r[4], tdee: r[5], source: r[6] }));
-  const recipes = rows(recSheet()).filter(r => r[0]).map(r => ({ id: String(r[0]), name: String(r[1]), url: String(r[2]), portions: +r[3] || 2, parts: +r[4] || 2, kcal: +r[5] || 0, p: +r[6] || 0, c: +r[7] || 0, f: +r[8] || 0, ingredients: String(r[9]), added: day(r[10]), eaten: +r[11] || 0, status: String(r[12] || 'en cours') }));
+  const recipes = rows(recSheet()).filter(r => r[0]).map(r => ({ id: String(r[0]), name: String(r[1]), url: String(r[2]), portions: +r[3] || 2, parts: +r[4] || 2, kcal: +r[5] || 0, p: +r[6] || 0, c: +r[7] || 0, f: +r[8] || 0, ingredients: String(r[9]), added: day(r[10]), eaten: +r[11] || 0, status: String(r[12] || 'en cours'), vsrc: String(r[13] || '') }));
   // Mots de Claude (onglet « Claude » : Date, Heure, Message), écrits par sa tâche planifiée : les 5 derniers
   const csh = ss.getSheetByName('Claude');
   const claude = csh ? rows(csh).filter(r => r[0] && r[2]).slice(-5).map(r => ({ date: day(r[0]), time: String(r[1] || ''), at: day(r[0]) + ' ' + String(r[1] || ''), text: String(r[2]) })) : [];
@@ -165,6 +165,7 @@ function recSheet() {
   } else if (sh.getRange(1, 12).getValue() === '') {
     sh.getRange(1, 12, 1, 2).setValues([['Parts mangées', 'Statut']]).setFontWeight('bold');
   }
+  if (sh.getRange(1, 14).getValue() === '') sh.getRange(1, 14).setValue('Valeurs').setFontWeight('bold');
   return sh;
 }
 
@@ -190,6 +191,26 @@ function fetchJow(url) {
   throw new Error('trop de redirections');
 }
 
+// Valeurs nutritionnelles PAR PORTION lues directement sur la fiche Jow (sans IA) : données schema.org, puis texte FR ou EN
+function jowFacts(html) {
+  const n = re => { const m = html.match(re); return m ? Math.round(parseFloat(String(m[1]).replace(',', '.'))) : null; };
+  let f = { kcal: n(/"calories"\s*:\s*"?\s*(\d+(?:[.,]\d+)?)/i), proteines: n(/"proteinContent"\s*:\s*"?\s*(\d+(?:[.,]\d+)?)/i), glucides: n(/"carbohydrateContent"\s*:\s*"?\s*(\d+(?:[.,]\d+)?)/i), lipides: n(/"fatContent"\s*:\s*"?\s*(\d+(?:[.,]\d+)?)/i) };
+  if (f.kcal && f.proteines !== null && f.glucides !== null && f.lipides !== null) return f;
+  const t = html.replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>/gi, ' ').replace(/<[^>]+>/g, ' ').replace(/&nbsp;|\u00a0/g, ' ').replace(/\s+/g, ' ');
+  const g = re => { const m = t.match(re); return m ? Math.round(parseFloat(m[1].replace(',', '.'))) : null; };
+  f = { kcal: g(/Calories\s*(\d+)\s*kcal/i) ?? g(/(\d+)\s*(?:É|E)nergie/i) ?? g(/Energy\s*(\d+)\s*cal/i) ?? g(/(\d+)\s*Energy/i),
+    lipides: g(/Mati(?:è|e)res grasses\s*(\d+(?:[.,]\d+)?)\s*g/i) ?? g(/(\d+)\s*g de Mati(?:è|e)res grasses/i) ?? g(/Fat\s*(\d+)\s*g/i) ?? g(/(\d+)\s*g of Fat/i),
+    glucides: g(/Glucides\s*(\d+(?:[.,]\d+)?)\s*g/i) ?? g(/(\d+)\s*g de Glucides/i) ?? g(/Carbohydrates\s*(\d+)\s*g/i) ?? g(/(\d+)\s*g of Carbohydrates/i),
+    proteines: g(/Prot(?:é|e)ines\s*(\d+(?:[.,]\d+)?)\s*g/i) ?? g(/(\d+)\s*g de Prot(?:é|e)ines/i) ?? g(/Protein\s*(\d+)\s*g/i) ?? g(/(\d+)\s*g of Protein/i) };
+  return f.kcal && f.proteines !== null && f.glucides !== null && f.lipides !== null ? f : null;
+}
+// Remplace les valeurs de Gemini par celles de la fiche Jow quand on peut les lire
+function withJowFacts(rec, html) {
+  const f = html ? jowFacts(html) : null;
+  if (f) { rec.parPortion = f; rec.source = 'jow'; } else rec.source = 'estimation';
+  return rec;
+}
+
 function importRecipe(b) {
   const url = String(b.url || '').trim();
   if (!JOW.test(url)) throw new Error('lien');
@@ -209,7 +230,9 @@ function importRecipe(b) {
   const data = (html.match(/<script[^>]*(__NEXT_DATA__|ld\+json)[^>]*>[\s\S]*?<\/script>/gi) || []).join(' ').replace(/<[^>]+>/g, ' ').slice(0, 25000);
   const text = html.replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>/gi, ' ').replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').slice(0, 20000);
   const res = gemini([{ text: RECIPE_PROMPT + '\n\nADRESSE : ' + f.url + '\n\nTEXTE DE LA PAGE :\n' + text + '\n\nDONNÉES DE LA PAGE :\n' + data }]);
-  return { recipes: (res && res.recettes) || [], finalUrl: f.url, preview: text.slice(0, 300) };
+  const recs = (res && res.recettes) || [];
+  if (recs.length === 1) withJowFacts(recs[0], html); else recs.forEach(r => { r.source = r.source === 'page' ? 'page' : 'estimation'; });
+  return { recipes: recs, finalUrl: f.url, preview: text.slice(0, 300) };
 }
 
 const MENU_PROMPT = `Voici les données JSON d'un menu partagé depuis l'appli Jow. Extrais chaque recette du menu.
@@ -224,7 +247,14 @@ function importMenu(q) {
   if (r.getResponseCode() !== 200) throw new Error('api jow ' + r.getResponseCode() + ' : ' + r.getContentText().slice(0, 150));
   const json = r.getContentText();
   const res = gemini([{ text: MENU_PROMPT + '\n\nDONNÉES :\n' + json.slice(0, 120000) }]);
-  return { recipes: (res && res.recettes) || [], finalUrl: 'https://jow.fr/cooking/recipes-selection/' + q.sharingId, preview: json.slice(0, 300) };
+  const recs = (res && res.recettes) || [];
+  // Les données du menu n'ont pas les valeurs nutritionnelles : on lit la fiche Jow de chaque recette
+  recs.slice(0, 12).forEach(r => {
+    let html = null;
+    try { if (r.lien && JOW.test(r.lien)) { const f = fetchJow(r.lien); if (f.code === 200) html = f.html; } } catch (e) {}
+    withJowFacts(r, html);
+  });
+  return { recipes: recs, finalUrl: 'https://jow.fr/cooking/recipes-selection/' + q.sharingId, preview: json.slice(0, 300) };
 }
 
 let LAST_TOKENS = 0;

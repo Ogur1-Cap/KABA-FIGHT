@@ -593,7 +593,14 @@ const isArch = r => r.status === 'archivée';
 function recCard(r) {
   const x = partOf(r), id = esc(r.id);
   if (isArch(r)) return '<div class="rec"><h3 style="color:var(--mute)">' + esc(r.name) + '</h3><div class="mute">' + (r.eaten || 0) + '/' + r.parts + ' parts notées · ' + fr(x.kcal) + ' kcal la part</div><div class="row"><button class="ghost" data-restore="' + id + '">Remettre en cours</button>' + ((r.eaten || 0) > 0 ? '<button class="ghost" data-undo="' + id + '">↩ Annuler la dernière part</button>' : '') + '<button class="x" data-delrec="' + id + '">supprimer</button></div></div>';
+  if (renderRecettes.fixing === r.id) return '<div class="rec"><h3>' + esc(r.name) + '</h3><p class="mute" style="font-size:13px;margin:4px 0 8px">Recopie la fiche Jow : « Valeurs nutritionnelles », pour <b>une portion</b>.</p>' +
+    '<div class="grid4"><div><label>Kcal</label><input data-rf="kcal" type="number" inputmode="numeric" value="' + r.kcal + '"></div><div><label>Prot. g</label><input data-rf="p" type="number" inputmode="numeric" value="' + r.p + '"></div><div><label>Gluc. g</label><input data-rf="c" type="number" inputmode="numeric" value="' + r.c + '"></div><div><label>Lip. g</label><input data-rf="f" type="number" inputmode="numeric" value="' + r.f + '"></div></div>' +
+    '<label style="margin-top:6px">Portions de la recette Jow</label><select data-rf="portions">' + [1, 2, 3, 4, 5, 6].map(n => '<option value="' + n + '"' + (n === (r.portions || 2) ? ' selected' : '') + '>' + n + '</option>').join('') + '</select>' +
+    '<p class="mute" style="font-size:13px;margin:6px 0 0">Les parts déjà notées dans tes repas seront recalculées.</p>' +
+    '<div class="btns" style="margin-top:8px"><button data-rfsave="' + id + '">Enregistrer</button><button class="ghost" data-rfcancel="1">Annuler</button></div></div>';
+  const estim = r.vsrc && r.vsrc !== 'Jow' && r.vsrc !== 'corrigées';
   return '<div class="rec"><h3>' + esc(r.name) + '</h3>' + warnHtml(doubt({ kcal: r.kcal, p: r.p, c: r.c, f: r.f }, 'portion')) +
+    (estim ? '<div style="margin:6px 0;color:var(--glove);font-size:14px">⚠️ Valeurs estimées par Gemini, pas lues sur la fiche Jow : vérifie-les avant de manger. <button class="x" data-rfix="' + id + '">Corriger</button></div>' : '') +
     '<div class="mute">1 part = <b style="color:var(--mat)">' + fr(x.kcal) + ' kcal</b> · P ' + fr(x.p) + ' g · G ' + fr(x.c) + ' g · L ' + fr(x.f) + ' g</div>' +
     '<div class="mute" style="margin-top:2px">' + r.portions + ' portion' + (r.portions > 1 ? 's' : '') + ' Jow en ' + r.parts + ' parts · <b style="color:var(--ink)">' + left(r) + ' restante' + (left(r) > 1 ? 's' : '') + '</b></div>' +
     (suggestParts(r) !== r.parts ? '<div class="mute" style="font-size:13px">Conseillé pour tes objectifs : ' + suggestParts(r) + ' parts</div>' : '') +
@@ -601,7 +608,7 @@ function recCard(r) {
     '<div class="row"><select data-parts="' + id + '" aria-label="Nombre de parts">' + [1, 2, 3, 4, 5, 6].map(n => '<option value="' + n + '"' + (n === r.parts ? ' selected' : '') + '>' + n + (n > 1 ? ' parts' : ' part') + '</option>').join('') + '</select>' +
     '<button class="ghost" data-done="' + id + '">Déjà mangée, terminer</button></div>' +
     ((r.eaten || 0) > 0 ? '<div class="row"><button class="ghost" data-undo="' + id + '">↩ Annuler la dernière part</button><span class="mute" style="font-size:13px">' + r.eaten + ' part' + (r.eaten > 1 ? 's' : '') + ' notée' + (r.eaten > 1 ? 's' : '') + '</span></div>' : '') +
-    '<details><summary>Ingrédients et lien</summary><p>' + esc(r.ingredients) + '</p>' + (r.url ? '<a href="' + esc(r.url) + '" target="_blank" rel="noopener" style="color:var(--mat)">Ouvrir dans Jow</a> · ' : '') + '<button class="x" data-delrec="' + id + '">supprimer la recette</button></details></div>';
+    '<details><summary>Ingrédients, lien et valeurs</summary><p>' + esc(r.ingredients) + '</p><p class="mute" style="font-size:13px">1 portion Jow : ' + fr(r.kcal) + ' kcal · P ' + fr(r.p) + ' · G ' + fr(r.c) + ' · L ' + fr(r.f) + (r.vsrc ? ' (' + esc(r.vsrc === 'Jow' ? 'lues sur Jow' : r.vsrc) + ')' : '') + ' · <button class="x" data-rfix="' + id + '">corriger les valeurs</button></p>' + (r.url ? '<a href="' + esc(r.url) + '" target="_blank" rel="noopener" style="color:var(--mat)">Ouvrir dans Jow</a> · ' : '') + '<button class="x" data-delrec="' + id + '">supprimer la recette</button></details></div>';
 }
 function renderRecettes() {
   const sorted = S.recipes.slice().sort((a, b) => (b.added || '').localeCompare(a.added || ''));
@@ -633,14 +640,40 @@ function renderRecettes() {
   };
   for (const b of $('recList').querySelectorAll('[data-done]')) b.onclick = () => { const r = find(b.dataset.done); if (r) { push({ action: 'setRecipe', recipe: { ...r, status: 'archivée' } }); toast(r.name + ' archivée, sans rien compter'); } };
   for (const b of $('recList').querySelectorAll('[data-restore]')) b.onclick = () => { const r = find(b.dataset.restore); if (r) push({ action: 'setRecipe', recipe: { ...r, status: 'en cours', eaten: Math.min(r.eaten || 0, r.parts - 1) } }); };
+  for (const b of $('recList').querySelectorAll('[data-rfix]')) b.onclick = () => { renderRecettes.fixing = b.dataset.rfix; renderRecettes(); };
+  for (const b of $('recList').querySelectorAll('[data-rfcancel]')) b.onclick = () => { renderRecettes.fixing = null; renderRecettes(); };
+  for (const b of $('recList').querySelectorAll('[data-rfsave]')) b.onclick = () => {
+    const r = find(b.dataset.rfsave); if (!r) return;
+    const v = k => Math.max(0, Math.round(parseFloat(String($('recList').querySelector('[data-rf="' + k + '"]').value).replace(',', '.')) || 0));
+    const nr = { ...r, kcal: v('kcal'), p: v('p'), c: v('c'), f: v('f'), portions: v('portions') || r.portions, vsrc: 'corrigées' };
+    if (!nr.kcal) { toast('Indique au moins les calories'); return; }
+    renderRecettes.fixing = null;
+    push({ action: 'setRecipe', recipe: nr });
+    const n = fixRecipeMeals(r, nr);
+    toast(r.name + ' corrigée' + (n ? ' · ' + n + ' part' + (n > 1 ? 's' : '') + ' déjà notée' + (n > 1 ? 's' : '') + ' recalculée' + (n > 1 ? 's' : '') : ''));
+  };
   for (const b of $('recList').querySelectorAll('[data-delrec]')) b.onclick = () => { push({ action: 'delRecipe', id: b.dataset.delrec }); toast('Recette supprimée'); };
+}
+// Recalcule les parts déjà notées d'une recette après correction de ses valeurs (repas « Nom (1/N) », source recette)
+function fixRecipeMeals(old, nr) {
+  fixRecipeMeals.n = 0;
+  const pre = old.name + ' (', re = /\((\d+)\/(\d+)\)\s*$/;
+  for (const [d, day] of Object.entries(S.days)) for (const m of (day.meals || [])) {
+    if (m.src !== 'recette' || !String(m.name).startsWith(pre)) continue;
+    const mm = re.exec(m.name); if (!mm) continue;
+    const k = (+mm[1]) * (nr.portions || 2) / (+mm[2]);
+    const upd = { ...m, date: d, kcal: Math.round(nr.kcal * k), p: Math.round(nr.p * k), c: Math.round(nr.c * k), f: Math.round(nr.f * k) };
+    if (upd.kcal === m.kcal && upd.p === m.p && upd.c === m.c && upd.f === m.f) continue;
+    push({ action: 'delMeal', id: m.id }); push({ action: 'addMeal', meal: upd }); fixRecipeMeals.n++;
+  }
+  return fixRecipeMeals.n;
 }
 function mealTarget() { const p = S.p; return Math.round(((p.kcalTrain * (p.trainingDays || []).length + p.kcalRest * (7 - (p.trainingDays || []).length)) / 7) * 0.4); }
 function suggestParts(r) { const total = r.kcal * (r.portions || 2); return clamp(Math.ceil(total / mealTarget() - 0.05), 1, 6); }
 const jowLinks = txt => [...new Set((String(txt).match(/https?:\/\/[^\s"'<>]*jow\.(com|fr)\/[^\s"'<>]+/gi) || []))];
 function makeRec(v, url, portions, parts) {
   const pp = v.parPortion || {};
-  const rec = { id: 'r' + Date.now() + Math.floor(Math.random() * 1000), name: String(v.nom || 'Recette Jow'), url, portions, parts: 2, eaten: 0, status: 'en cours', kcal: Math.round(+pp.kcal || 0), p: Math.round(+pp.proteines || 0), c: Math.round(+pp.glucides || 0), f: Math.round(+pp.lipides || 0), ingredients: (v.ingredients || []).join(', '), added: today() };
+  const rec = { id: 'r' + Date.now() + Math.floor(Math.random() * 1000), name: String(v.nom || 'Recette Jow'), url, portions, parts: 2, eaten: 0, status: 'en cours', kcal: Math.round(+pp.kcal || 0), p: Math.round(+pp.proteines || 0), c: Math.round(+pp.glucides || 0), f: Math.round(+pp.lipides || 0), ingredients: (v.ingredients || []).join(', '), added: today(), vsrc: v.source === 'jow' || v.source === 'page' || v.source === 'donnees' ? 'Jow' : 'estimées' };
   rec.parts = parts || suggestParts(rec);
   return rec;
 }
