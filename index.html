@@ -1067,7 +1067,7 @@ $('anaBtn').onclick = async () => {
     if (!items.length) { $('anaOut').innerHTML = '<p class="mute">Je n’ai pas reconnu de repas. Essaie une autre photo ou décris-le.</p>'; return; }
     draft = { name: String(v.nom || 'Repas'), items, conf: v.confiance || '', q: v.question || '' };
     renderDraft();
-  } catch (e) { $('anaOut').innerHTML = '<p class="mute">' + (e && e.name === 'AbortError' ? 'Gemini met trop de temps à répondre (plus de 90 s). Réessaie plus tard, ou passe par Aliments ou Manuel.' : 'Pas de réponse du Google Sheet. Réessaie dans un moment.') + '</p>'; report('analyse', e && e.name); }
+  } catch (e) { $('anaOut').innerHTML = '<p class="mute">' + (e && e.name === 'AbortError' ? 'Gemini met trop de temps à répondre (plus de 90 s). Réessaie plus tard, ou passe par Aliments ou Manuel.' : 'Pas de réponse du Google Sheet. Réessaie dans un moment.') + '</p>'; report('analyse', e ? e.name + ' : ' + (e.message || '') + (e.stack ? ' @ ' + String(e.stack).split('\n')[1] : '') : '?'); }
   finally { $('anaBtn').disabled = false; $('anaBtn').textContent = 'Analyser'; }
 };
 const scaled = i => { const k = i.g0 ? i.g / i.g0 : 1; return { kcal: i.kcal * k, p: i.p * k, c: i.c * k, f: i.f * k }; };
