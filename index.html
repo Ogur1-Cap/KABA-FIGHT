@@ -1062,7 +1062,13 @@ $('anaBtn').onclick = async () => {
   $('anaBtn').disabled = true; $('anaBtn').textContent = 'Analyse en cours…'; $('anaOut').innerHTML = '';
   try {
     const ctl = new AbortController(), tm = setTimeout(() => ctl.abort(), 90000);
-    const r = await fetch(S.cfg.url, { method: 'POST', signal: ctl.signal, body: JSON.stringify({ token: S.cfg.token, action: 'analyze', image: photoB64, note }) }).then(x => x.json()).finally(() => clearTimeout(tm));
+    const ask = () => fetch(S.cfg.url, { method: 'POST', signal: ctl.signal, body: JSON.stringify({ token: S.cfg.token, action: 'analyze', image: photoB64, note }) }).then(x => x.json());
+    let r;
+    try {
+      r = await ask();
+      // Réponse de Gemini mal formée (JSON suivi d'autre texte) : erreur rapide et passagère, on relance une fois tout seul
+      if (!r.ok && /JSON|illisible/i.test(String(r.error || ''))) { $('anaOut').innerHTML = '<p class="mute">Réponse mal formée, je relance…</p>'; r = await ask(); $('anaOut').innerHTML = ''; }
+    } finally { clearTimeout(tm); }
     if (!r.ok) {
       $('anaOut').innerHTML = '<p class="mute">' + (r.error === 'nokey' ? 'L’analyse photo n’est pas encore activée : il manque la clé Gemini dans le script du Google Sheet.' : /gemini 5|gemini lent/.test(r.error) ? 'Gemini est saturé ou trop lent en ce moment. Réessaie dans quelques minutes, ou passe par Aliments ou Manuel.' : r.error === 'limite_jour' ? 'Limite de sécurité du jour atteinte (80 analyses). Ça repart demain.' : r.error === 'quota' ? 'Limite gratuite atteinte pour le moment. Réessaie dans une minute, ou passe par l’onglet Manuel.' : 'L’analyse a échoué (' + esc(r.error) + '). Réessaie ou passe par l’onglet Manuel.') + '</p>';
       return;
