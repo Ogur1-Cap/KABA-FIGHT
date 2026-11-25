@@ -86,6 +86,10 @@ main,.card,.pane{min-width:0}
 .daytitle .nav{min-height:34px;min-width:34px;padding:0 8px;font-size:20px;line-height:1}
 .daytitle .nav:disabled{opacity:.3}
 .past{border:1px solid var(--mat);background:var(--mat2);font-size:14px;padding:12px 14px}
+.rv{border:1px solid var(--line);border-radius:12px;padding:12px;margin-top:10px}
+.okline{margin:4px 0 8px;color:var(--ok,#3ecf8e);font-size:14px}.badline{margin:4px 0 8px;color:var(--glove);font-size:14px}
+.rvline{margin:8px 0 6px;font-size:14px}.chk{display:flex;align-items:center;gap:8px;margin-top:10px;font-size:15px;color:var(--ink)}
+.chk input{width:22px;height:22px;flex:0 0 22px;accent-color:var(--mat)}
 .msg{padding:10px 12px;border-radius:14px;margin:8px 0;max-width:88%;white-space:pre-wrap;line-height:1.45}
 .msg.user{background:var(--mat);color:var(--on);margin-left:auto}
 .msg.assistant{background:#101013;border:1px solid var(--line)}
@@ -182,6 +186,7 @@ main,.card,.pane{min-width:0}
     </form>
     <div id="recOut"></div>
   </div>
+  <div id="recReview"></div>
   <div class="card">
     <h2>Mes recettes</h2>
     <div id="recList"></div>

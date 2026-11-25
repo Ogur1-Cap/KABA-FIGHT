@@ -198,7 +198,7 @@ function jowFacts(html) {
   if (f.kcal && f.proteines !== null && f.glucides !== null && f.lipides !== null) return f;
   const t = html.replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>/gi, ' ').replace(/<[^>]+>/g, ' ').replace(/&nbsp;|\u00a0/g, ' ').replace(/\s+/g, ' ');
   const g = re => { const m = t.match(re); return m ? Math.round(parseFloat(m[1].replace(',', '.'))) : null; };
-  f = { kcal: g(/Calories\s*(\d+)\s*kcal/i) ?? g(/(\d+)\s*(?:É|E)nergie/i) ?? g(/Energy\s*(\d+)\s*cal/i) ?? g(/(\d+)\s*Energy/i),
+  f = { kcal: g(/Calories\s*(\d+)\s*k?cal/i) ?? g(/(?:É|E)nergie\s*(\d+)\s*k?cal/i) ?? g(/(\d+)\s*(?:É|E)nergie/i) ?? g(/Energy\s*(\d+)\s*cal/i) ?? g(/(\d+)\s*Energy/i),
     lipides: g(/Mati(?:è|e)res grasses\s*(\d+(?:[.,]\d+)?)\s*g/i) ?? g(/(\d+)\s*g de Mati(?:è|e)res grasses/i) ?? g(/Fat\s*(\d+)\s*g/i) ?? g(/(\d+)\s*g of Fat/i),
     glucides: g(/Glucides\s*(\d+(?:[.,]\d+)?)\s*g/i) ?? g(/(\d+)\s*g de Glucides/i) ?? g(/Carbohydrates\s*(\d+)\s*g/i) ?? g(/(\d+)\s*g of Carbohydrates/i),
     proteines: g(/Prot(?:é|e)ines\s*(\d+(?:[.,]\d+)?)\s*g/i) ?? g(/(\d+)\s*g de Prot(?:é|e)ines/i) ?? g(/Protein\s*(\d+)\s*g/i) ?? g(/(\d+)\s*g of Protein/i) };
@@ -229,17 +229,24 @@ function importRecipe(b) {
   }
   const data = (html.match(/<script[^>]*(__NEXT_DATA__|ld\+json)[^>]*>[\s\S]*?<\/script>/gi) || []).join(' ').replace(/<[^>]+>/g, ' ').slice(0, 25000);
   const text = html.replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>/gi, ' ').replace(/<[^>]+>/g, ' ').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').slice(0, 20000);
-  const res = gemini([{ text: RECIPE_PROMPT + '\n\nADRESSE : ' + f.url + '\n\nTEXTE DE LA PAGE :\n' + text + '\n\nDONNÉES DE LA PAGE :\n' + data }]);
-  const recs = (res && res.recettes) || [];
+  let res = null, gErr = null;
+  try { res = gemini([{ text: RECIPE_PROMPT + '\n\nADRESSE : ' + f.url + '\n\nTEXTE DE LA PAGE :\n' + text + '\n\nDONNÉES DE LA PAGE :\n' + data }]); } catch (e) { gErr = e; }
+  let recs = (res && res.recettes) || [];
+  // Gemini saturé ou illisible : si la fiche Jow donne ses valeurs, on importe quand même (nom tiré du titre de la page)
+  if (!recs.length && /\/recipes\//.test(f.url) && jowFacts(html)) {
+    const t = (html.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)/i) || html.match(/<title>([^<]+)/i) || [])[1] || 'Recette Jow';
+    recs = [{ nom: t.replace(/\s*[-|–].*$/, '').replace(/&amp;/g, '&').replace(/&#x27;|&#39;/g, "'").trim(), ingredients: [] }];
+  }
+  if (!recs.length && gErr) throw gErr;
   if (recs.length === 1) withJowFacts(recs[0], html); else recs.forEach(r => { r.source = r.source === 'page' ? 'page' : 'estimation'; });
   return { recipes: recs, finalUrl: f.url, preview: text.slice(0, 300) };
 }
 
 const MENU_PROMPT = `Voici les données JSON d'un menu partagé depuis l'appli Jow. Extrais chaque recette du menu.
-Pour chaque recette : son nom, ses ingrédients avec quantités (pour UNE portion si les données le permettent), et ses valeurs nutritionnelles PAR PORTION. Si les données contiennent des valeurs nutritionnelles, reprends-les en les ramenant à une portion. Sinon, estime-les par portion à partir des ingrédients (table Ciqual, sans sous-estimer les matières grasses).
+Pour chaque recette : son nom, le nombre de portions (couverts) prévu dans ce menu ("portions", nombre entier), ses ingrédients avec quantités pour CE nombre de portions, et ses valeurs nutritionnelles PAR PORTION. Si les données contiennent des valeurs nutritionnelles, reprends-les en les ramenant à une portion. Sinon, estime-les par portion à partir des ingrédients (table Ciqual, sans sous-estimer les matières grasses).
 Si un identifiant et un slug de recette sont présents, construis "lien" sous la forme https://jow.com/fr/recipes/SLUG-ID, sinon laisse "".
 Réponds uniquement avec un objet JSON :
-{"recettes":[{"nom":"Poulet impérial","lien":"","ingredients":["120 g de poulet","75 g de riz"],"parPortion":{"kcal":650,"proteines":40,"glucides":70,"lipides":20},"source":"donnees|estimation"}]}`;
+{"recettes":[{"nom":"Poulet impérial","lien":"","portions":2,"ingredients":["120 g de poulet","75 g de riz"],"parPortion":{"kcal":650,"proteines":40,"glucides":70,"lipides":20},"source":"donnees|estimation"}]}`;
 
 function importMenu(q) {
   const api = 'https://api.jow.fr/public/share/link/details?key=' + encodeURIComponent(q.key) + '&userId=' + encodeURIComponent(q.userId) + '&sharingId=' + encodeURIComponent(q.sharingId);

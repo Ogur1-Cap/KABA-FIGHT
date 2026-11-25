@@ -35,7 +35,7 @@ const LS = {
   get(k, d) { try { const v = localStorage.getItem('kaba.' + k); return v ? JSON.parse(v) : d; } catch { return d; } },
   set(k, v) { try { localStorage.setItem('kaba.' + k, JSON.stringify(v)); } catch {} }
 };
-const S = { p: { ...DEFAULT }, days: {}, adj: [], recipes: [], claude: [], cfg: LS.get('cfg', null), outbox: LS.get('outbox', []), syncing: false, lastSync: null };
+const S = { p: { ...DEFAULT }, days: {}, adj: [], recipes: [], claude: [], pending: LS.get('pending', []) || [], cfg: LS.get('cfg', null), outbox: LS.get('outbox', []), syncing: false, lastSync: null };
 (function loadCache() { const c = LS.get('cache', null); if (c) { S.p = { ...DEFAULT, ...c.profile }; S.days = c.days || {}; S.adj = c.adj || []; S.recipes = c.recipes || []; S.claude = c.claude || []; S.lastSync = c.at; } })();
 
 function applyLocal(op) {
@@ -611,6 +611,7 @@ function recCard(r) {
     '<details><summary>Ingrédients, lien et valeurs</summary><p>' + esc(r.ingredients) + '</p><p class="mute" style="font-size:13px">1 portion Jow : ' + fr(r.kcal) + ' kcal · P ' + fr(r.p) + ' · G ' + fr(r.c) + ' · L ' + fr(r.f) + (r.vsrc ? ' (' + esc(r.vsrc === 'Jow' ? 'lues sur Jow' : r.vsrc) + ')' : '') + ' · <button class="x" data-rfix="' + id + '">corriger les valeurs</button></p>' + (r.url ? '<a href="' + esc(r.url) + '" target="_blank" rel="noopener" style="color:var(--mat)">Ouvrir dans Jow</a> · ' : '') + '<button class="x" data-delrec="' + id + '">supprimer la recette</button></details></div>';
 }
 function renderRecettes() {
+  renderReview();
   const sorted = S.recipes.slice().sort((a, b) => (b.added || '').localeCompare(a.added || ''));
   const act = sorted.filter(r => !isArch(r)), arch = sorted.filter(isArch);
   if (!renderRecettes.tab) renderRecettes.tab = 'act';
@@ -673,7 +674,8 @@ function suggestParts(r) { const total = r.kcal * (r.portions || 2); return clam
 const jowLinks = txt => [...new Set((String(txt).match(/https?:\/\/[^\s"'<>]*jow\.(com|fr)\/[^\s"'<>]+/gi) || []))];
 function makeRec(v, url, portions, parts) {
   const pp = v.parPortion || {};
-  const rec = { id: 'r' + Date.now() + Math.floor(Math.random() * 1000), name: String(v.nom || 'Recette Jow'), url, portions, parts: 2, eaten: 0, status: 'en cours', kcal: Math.round(+pp.kcal || 0), p: Math.round(+pp.proteines || 0), c: Math.round(+pp.glucides || 0), f: Math.round(+pp.lipides || 0), ingredients: (v.ingredients || []).join(', '), added: today(), vsrc: v.source === 'jow' || v.source === 'page' || v.source === 'donnees' ? 'Jow' : 'estimées' };
+  const vp = Math.round(+v.portions || 0);
+  const rec = { id: 'r' + Date.now() + Math.floor(Math.random() * 1000), name: String(v.nom || 'Recette Jow'), url, portions: vp >= 1 && vp <= 8 ? vp : portions, parts: 2, eaten: 0, status: 'en cours', kcal: Math.round(+pp.kcal || 0), p: Math.round(+pp.proteines || 0), c: Math.round(+pp.glucides || 0), f: Math.round(+pp.lipides || 0), ingredients: (v.ingredients || []).join(', '), added: today(), vsrc: v.source === 'jow' || v.source === 'page' || v.source === 'donnees' ? 'Jow' : 'estimées' };
   rec.parts = parts || suggestParts(rec);
   return rec;
 }
@@ -685,7 +687,6 @@ async function importOne(url, portions, parts) {
   const list = Array.isArray(r.recipes) ? r.recipes : r.recipe ? [r.recipe] : [];
   const recs = list.filter(v => v && v.parPortion && +v.parPortion.kcal).map(v => makeRec(v, v.lien || (list.length === 1 ? url : (r.finalUrl || url)), portions, parts));
   if (!recs.length) throw new Error('aucune recette lisible' + (r.preview ? ' (page : « ' + String(r.preview).slice(0, 120) + '… »)' : ''));
-  for (const rec of recs) push({ action: 'setRecipe', recipe: rec });
   return { recs };
 }
 async function importAll(urls) {
@@ -713,7 +714,13 @@ async function importAll(urls) {
       if (res.links) {
         const fresh = res.links.filter(l => !seen.has(l)); fresh.forEach(l => { seen.add(l); queue.push(l); });
         lines.push('<p style="margin:4px 0">📋 Menu Jow : ' + fresh.length + ' recette' + (fresh.length > 1 ? 's' : '') + ' trouvée' + (fresh.length > 1 ? 's' : '') + '</p>');
-      } else for (const rec of res.recs) { const x = partOf(rec); const w = doubt({ kcal: rec.kcal, p: rec.p, c: rec.c, f: rec.f }, 'portion'); lines.push('<p style="margin:4px 0">' + (w.length ? '⚠️' : '✅') + ' <b>' + esc(rec.name) + '</b> : ' + rec.parts + ' part' + (rec.parts > 1 ? 's' : '') + ' de ' + fr(x.kcal) + ' kcal (' + fr(x.p) + ' g prot.)' + (w.length ? ' · à vérifier' : '') + '</p>'); }
+      } else for (const rec of res.recs) {
+        const key = (rec.url || '') + '|' + rec.name.toLowerCase();
+        if (S.pending.some(x => (x.url || '') + '|' + x.name.toLowerCase() === key)) continue;
+        S.pending.push(rec);
+        lines.push('<p style="margin:4px 0">' + (rec.vsrc === 'Jow' ? '✅' : '⚠️') + ' <b>' + esc(rec.name) + '</b> : ' + (rec.vsrc === 'Jow' ? 'valeurs lues sur la fiche Jow' : 'valeurs estimées, à vérifier') + '</p>');
+      }
+      LS.set('pending', S.pending);
     } catch (e) { lines.push('<p class="mute" style="margin:4px 0">❌ ' + esc(url.slice(0, 60)) + '… : ' + esc(e.message) + '</p>'); }
     show();
     if (queue.length) await new Promise(r => setTimeout(r, 4000));
@@ -721,7 +728,56 @@ async function importAll(urls) {
   $('recBtn').disabled = false; $('recBtn').textContent = 'Importer'; $('recUrl').value = '';
   if (S.shared && lines.some(l => l.includes('❌'))) { lines.push('<p class="mute" style="margin-top:10px">Texte reçu de Jow :</p><p style="white-space:pre-wrap;font-size:13px">' + esc(S.shared.slice(0, 800)) + '</p>'); show(); }
   S.shared = null;
-  toast('Import terminé');
+  renderReview();
+  toast(S.pending.length ? 'Vérifie puis ajoute tes recettes' : 'Import terminé');
+}
+/* ---------- vérification avant ajout : valeurs, portions, parts ---------- */
+function renderReview() {
+  const box = $('recReview'); if (!box) return;
+  const P = S.pending || [];
+  if (!P.length) { box.innerHTML = ''; return; }
+  const sel = (attr, i, v, max, lab) => '<select ' + attr + '="' + i + '">' + Array.from({ length: max }, (_, k) => k + 1).map(n => '<option value="' + n + '"' + (n === v ? ' selected' : '') + '>' + n + (lab ? ' ' + lab + (n > 1 ? 's' : '') : '') + '</option>').join('') + '</select>';
+  box.innerHTML = '<div class="card rvwrap"><h2 style="margin-bottom:4px">Vérifier avant d’ajouter</h2><p class="mute" style="margin:0 0 6px;font-size:14px">Valeurs <b>pour 1 portion</b>, comme sur la fiche Jow. Choisis en combien de parts tu sépares le plat.</p>' +
+    P.map((r, i) => {
+      const ok = r.vsrc === 'Jow' || r.vsrc === 'corrigées', dup = S.recipes.some(x => !isArch(x) && x.name.toLowerCase() === r.name.toLowerCase());
+      return '<div class="rec rv" data-rv="' + i + '"><h3>' + esc(r.name) + '</h3>' +
+        (r.vsrc === 'Jow' ? '<p class="okline">✓ Valeurs lues sur la fiche Jow</p>' : r.vsrc === 'corrigées' ? '<p class="okline">✓ Valeurs vérifiées par toi</p>' : '<p class="badline">⚠️ Valeurs estimées par Gemini : ouvre la fiche Jow et recopie « Valeurs nutritionnelles ».</p>') +
+        (dup ? '<p class="badline" style="color:var(--silver)">Déjà dans tes recettes en cours.</p>' : '') +
+        '<div class="grid4"><div><label>Kcal</label><input data-pv="' + i + ':kcal" type="number" inputmode="numeric" value="' + r.kcal + '"></div><div><label>Prot. g</label><input data-pv="' + i + ':p" type="number" inputmode="numeric" value="' + r.p + '"></div><div><label>Gluc. g</label><input data-pv="' + i + ':c" type="number" inputmode="numeric" value="' + r.c + '"></div><div><label>Lip. g</label><input data-pv="' + i + ':f" type="number" inputmode="numeric" value="' + r.f + '"></div></div>' +
+        '<div class="grid2" style="margin-top:6px"><div><label>Portions Jow</label>' + sel('data-pp', i, r.portions || 2, 8) + '</div><div><label>Tu sépares en</label>' + sel('data-pt', i, r.parts || 2, 8, 'part') + '</div></div>' +
+        '<p class="rvline" id="rvl' + i + '"></p>' +
+        (r.url ? '<a href="' + esc(r.url) + '" target="_blank" rel="noopener" style="color:var(--mat);font-size:14px">Vérifier sur la fiche Jow ↗</a>' : '') +
+        '<label class="chk"><input type="checkbox" data-pc="' + i + '"' + (ok && !dup ? ' checked' : '') + '> ' + (ok ? 'Ajouter' : 'J’ai vérifié ces valeurs, ajouter') + '</label></div>';
+    }).join('') +
+    '<div class="btns" style="margin-top:10px"><button id="rvAdd">Ajouter les recettes cochées</button><button class="ghost" id="rvDrop">Tout annuler</button></div></div>';
+  const line = i => {
+    const r = P[i], x = partOf(r), w = doubt({ kcal: r.kcal, p: r.p, c: r.c, f: r.f }, 'portion'), sp = suggestParts(r);
+    $('rvl' + i).innerHTML = '1 part = <b style="color:var(--mat)">' + fr(x.kcal) + ' kcal</b> · P ' + fr(x.p) + ' · G ' + fr(x.c) + ' · L ' + fr(x.f) + (sp !== r.parts ? ' <span class="mute">(conseillé : ' + sp + ' parts)</span>' : '') + (w.length ? '<br><span style="color:var(--glove)">⚠️ ' + esc(w.join(' ; ')) + '</span>' : '');
+  };
+  P.forEach((_, i) => line(i));
+  const save = () => LS.set('pending', P);
+  for (const el of box.querySelectorAll('[data-pv]')) el.oninput = () => {
+    const [i, k] = el.dataset.pv.split(':'), r = P[+i];
+    r[k] = Math.max(0, Math.round(parseFloat(String(el.value).replace(',', '.')) || 0));
+    if (r.vsrc !== 'corrigées') {
+      r.vsrc = 'corrigées'; const c = box.querySelector('[data-pc="' + i + '"]'); c.checked = true; c.parentNode.lastChild.textContent = ' Ajouter';
+      const bl = box.querySelector('[data-rv="' + i + '"] .badline, [data-rv="' + i + '"] .okline'); if (bl) { bl.className = 'okline'; bl.textContent = '✓ Valeurs vérifiées par toi'; }
+    }
+    line(+i); save();
+  };
+  for (const el of box.querySelectorAll('[data-pp]')) el.onchange = () => { P[+el.dataset.pp].portions = +el.value; line(+el.dataset.pp); save(); };
+  for (const el of box.querySelectorAll('[data-pt]')) el.onchange = () => { P[+el.dataset.pt].parts = +el.value; line(+el.dataset.pt); save(); };
+  $('rvDrop').onclick = () => { S.pending = []; LS.set('pending', []); renderReview(); toast('Import annulé'); };
+  $('rvAdd').onclick = () => {
+    const picked = P.filter((r, i) => box.querySelector('[data-pc="' + i + '"]').checked);
+    if (!picked.length) { toast('Coche au moins une recette'); return; }
+    const bad = picked.filter(r => !r.kcal);
+    if (bad.length) { toast('Calories manquantes pour ' + bad[0].name); return; }
+    picked.forEach((r, k) => push({ action: 'setRecipe', recipe: { ...r, id: 'r' + (Date.now() + k), added: today(), eaten: 0, status: 'en cours' } }));
+    S.pending = P.filter(r => !picked.includes(r)); LS.set('pending', S.pending);
+    $('recOut').innerHTML = ''; renderReview();
+    toast(picked.length + ' recette' + (picked.length > 1 ? 's' : '') + ' ajoutée' + (picked.length > 1 ? 's' : ''));
+  };
 }
 $('recForm').onsubmit = e => {
   e.preventDefault();
