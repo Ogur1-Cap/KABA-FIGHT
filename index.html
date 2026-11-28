@@ -425,16 +425,20 @@ function trendSeries(p, days, until, alpha = 0.2) {
   }
   return out;
 }
-// Poids actuel estimé : tendance corrigée de son retard (pente des 7 dernières pesées)
+// Poids actuel estimé : tendance corrigée de son retard. La pente est robuste (médiane des pentes entre paires de
+// pesées sur 14 jours, insensible à une pesée « eau » isolée) et plafonnée à ±30 g/jour (≈ 1 kg/semaine), sinon une
+// seule pesée haute (repas salé, alcool) fait croire à une chute rapide et l'appli passe trop tôt en maintien.
 function current(p, days, today, alpha = 0.2) {
   const ser = trendSeries(p, days, today, alpha), last = ser[ser.length - 1];
-  const start = addDays(today, -7);
+  const start = addDays(today, -14);
   const pts = ser.filter(r => r.date > start && r.w !== null).map(r => [diffDays(start, r.date), r.w]);
   let slope = 0;
   if (pts.length >= 4) {
-    const mx = pts.reduce((a, q) => a + q[0], 0) / pts.length, my = pts.reduce((a, q) => a + q[1], 0) / pts.length;
-    const sxx = pts.reduce((a, q) => a + (q[0] - mx) ** 2, 0), sxy = pts.reduce((a, q) => a + (q[0] - mx) * (q[1] - my), 0);
-    slope = sxx ? clamp(sxy / sxx, -0.2, 0.2) : 0;
+    const sl = [];
+    for (let i = 0; i < pts.length; i++) for (let j = i + 1; j < pts.length; j++) if (pts[j][0] !== pts[i][0]) sl.push((pts[j][1] - pts[i][1]) / (pts[j][0] - pts[i][0]));
+    sl.sort((a, b) => a - b);
+    const m = sl.length ? (sl.length % 2 ? sl[(sl.length - 1) / 2] : (sl[sl.length / 2 - 1] + sl[sl.length / 2]) / 2) : 0;
+    slope = clamp(m, -0.03, 0.03);
   }
   return { trend: last.trend, est: last.trend + slope * (1 - alpha) / alpha, slope, ser };
 }
@@ -465,9 +469,12 @@ function proposal(p, days, today) {
   const fs = fwStart(p);
   const left = Math.max(1, diffDays(today, fs));
   const need = trend - p.fwTarget;
-  // Au-dessus de l'objectif : déficit (250 à 750 kcal). Objectif atteint : maintien (on mange à sa dépense),
-  // avec un léger surplus seulement si la tendance passe nettement en dessous.
-  const deficit = need > 0 ? Math.round(clamp(need * K / left, 0, 750)) : need < -0.5 ? -150 : 0;
+  // Avant la semaine du combat, on garde au moins 250 kcal de déficit tant que la tendance est au-dessus de
+  // l'objectif du matin + 0,3 kg : la semaine du combat ne doit pas porter seule toute la fin de la descente
+  // (et la dépense mesurée peut être surestimée si des repas ne sont pas notés). Au-delà : proportionnel, 750 max.
+  // Maintien seulement quand on est déjà quasiment au poids du matin de la pesée.
+  const floor = today < fs && trend > p.targetMorning + 0.3 ? 250 : 0;
+  const deficit = need > 0 ? Math.round(clamp(need * K / left, floor, 750)) : floor ? floor : trend < p.targetMorning - 0.3 ? -150 : 0;
   const mode = deficit < 100 ? 'maintien' : 'perte';
   const avg = Math.max(1750, td.value - deficit);
   const nTrain = (p.trainingDays || []).length;
